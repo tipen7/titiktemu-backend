@@ -1,0 +1,19 @@
+node_modules/
+
+dist/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs and test output
+*.log
+logs/
+coverage/
+
+# Local tooling and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
