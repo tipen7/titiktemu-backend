@@ -1,5 +1,8 @@
-import { Router, type Router as ExpressRouter } from "express";
+import { type Router as ExpressRouter, Router } from "express";
+import { healthController, statusController } from "../controllers/index.js";
 
 // Routes map HTTP methods and paths to controllers.
-// This router is intentionally not mounted until a real endpoint is implemented.
 export const apiRouter: ExpressRouter = Router();
+
+apiRouter.get("/health", healthController);
+apiRouter.get("/status", statusController);

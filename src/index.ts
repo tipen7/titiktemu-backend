@@ -1,9 +1,8 @@
-import express, { type Express, type Request, type Response } from 'express';
+import { app } from "./app.js";
+import { appConfig } from "./config/index.js";
 
-const app: Express = express();
-
-app.get('/', (req: Request, res: Response) => {
-  res.send('Hello World!');
+app.listen(appConfig.port, () => {
+  console.log(
+    `titiktemu-backend listening on port ${appConfig.port} (${appConfig.environment})`,
+  );
 });
-
-app.listen(3000);

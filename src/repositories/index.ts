@@ -1,5 +1,6 @@
+import { type DatabaseStatus, getDatabaseStatus } from "../db/index.js";
+
 // Repositories isolate persistence queries from the service layer.
-// This placeholder represents the future health or connectivity query.
-export function readRepositoryStatus(): "not-configured" {
-  return "not-configured";
+export async function readRepositoryStatus(): Promise<DatabaseStatus> {
+  return getDatabaseStatus();
 }

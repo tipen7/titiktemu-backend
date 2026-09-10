@@ -1,5 +1,22 @@
+import { Pool } from "pg";
+import { appConfig } from "../config/index.js";
+
 // Database clients and connection setup belong in this module.
-// The real Supabase or PostgreSQL client can replace this placeholder later.
-export function getDatabaseStatus(): "not-configured" {
-  return "not-configured";
+let pool: Pool | undefined;
+
+function getPool(): Pool {
+  pool ??= new Pool({ connectionString: appConfig.databaseUrl });
+  return pool;
+}
+
+export type DatabaseStatus = "ok" | "error";
+
+export async function getDatabaseStatus(): Promise<DatabaseStatus> {
+  if (!appConfig.databaseUrl) return "error";
+  try {
+    await getPool().query("SELECT 1");
+    return "ok";
+  } catch {
+    return "error";
+  }
 }
