@@ -53,7 +53,7 @@ Set values appropriate for your local environment. Do not commit `.env`, Supabas
 | `SUPABASE_URL` | Supabase project URL | Not yet used by any endpoint |
 | `SUPABASE_ANON_KEY` | Supabase public/anonymous API key | Not yet used by any endpoint |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase server-side key | Not yet used by any endpoint; keep private |
-| `DATABASE_URL` | PostgreSQL connection string. Used by `GET /api/status` to report DB connectivity | Yes, for `/api/status` to report `database: "ok"` |
+| `DATABASE_URL` | PostgreSQL connection string. Used by `GET /api/status` to report DB connectivity, and by `/api/zones`, `/api/zones/lookup`, `/api/reallocation` to read titiktemu-analytics' output tables | Yes |
 | `CORS_ORIGIN` | Comma-separated allowed browser origins | No. Defaults to `http://localhost:3000`. |
 
 The values in `.env.example` are placeholders. Replace them before enabling database or Supabase-backed features.
@@ -120,10 +120,25 @@ pnpm start
 | --- | --- | --- | --- |
 | `GET` | `/api/health` | Liveness check | `{"status":"ok"}` |
 | `GET` | `/api/status` | Liveness + DB connectivity (Controller → Service → Repository → DB) | `{"status":"ok"\|"degraded","database":"ok"\|"error"}` (503 if degraded) |
+| `GET` | `/api/zones` | All scored grid cells as GeoJSON (Discovery Map base layer) | GeoJSON `FeatureCollection` |
+| `GET` | `/api/zones/lookup?lat=&lng=` | Zone detail for one location (UMKM Self Discovery Tracker) | Zone detail, or 404 outside the study area |
+| `GET` | `/api/reallocation?lat=&lng=` | Reallocation candidates for one location (Smart Tenant Matching Engine's "View Reallocation") | `{found, eligible, zone, candidates, message?}` |
+| `GET` | `/api/model-accuracy` | Latest EWS/matching_score model accuracy -- one figure per batch run, not per cell | `{accuracy_pct, confidence_level, computed_at}`, or 404 if analytics hasn't run yet |
+| `POST` | `/api/chat` | Asisten AI TitikTemu chatbot, scoped to TitikTemu's domain (Operator/UMKM) | `{answer, highlight_grid_ids, in_scope}` |
+| `GET` | `/api/umkm` | Paginated/filterable UMKM business listing (Discovery Map favorites, Self-Tracker table) | `{rows, total}` |
+| `GET` | `/api/umkm/:id` | Single UMKM business detail | UMKM business detail, or 404 |
+| `GET` | `/api/dashboard-summary` | Latest ESG dashboard / Operator beranda summary | Dashboard summary object, or 404 if analytics hasn't run yet |
+| `GET` | `/api/policy-recommendations` | Policy narratives for Laporan Alokasi, optionally filtered by type | Array of policy recommendations |
 | `GET` | `/api/isochrone` | Walking-distance isochrone from the OSM road network (see "AI & algorithm engine") | GeoJSON hull + reached edges |
 | `POST` | `/api/score/risk-classification` | EWS risk classification, proxied to the ML team's scoring service (mock today) | `{"gridId","riskCode","confidence"}` |
 | `POST` | `/api/score/tenant-matching` | Smart Tenant Matching score, proxied to the ML team's scoring service (mock today) | `{"gridId","businessCategory","matchScore"}` |
 | `POST` | `/api/narrative` | LLM policy narrative from a JSON payload (Gemini, with fallback) | `{"narrative","generatedByLlm"}` |
+
+`ZoneDetail` (returned by `/api/zones/lookup` and nested in `/api/reallocation`) carries `model_accuracy` too, so a zone's own detail view can show the confidence badge without a second request.
+
+The `/api/zones*`, `/api/reallocation`, `/api/model-accuracy`, `/api/umkm*`, `/api/dashboard-summary`, and `/api/policy-recommendations` endpoints read tables written by **titiktemu-analytics**' batch pipeline (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `spatial_grids_geojson`, `umkm_businesses`, `dashboard_summary`) via plain SQL against `DATABASE_URL` -- see `src/repositories/index.ts`. **This is a separate schema from the one this repo's own `supabase/migrations/` manages** (`grid`, `mapid_staging`, `osm_road`, etc. -- see "Data ingestion" below); titiktemu-analytics is an external Python repo not present in this workspace, and manages its own tables independently. Zone/reallocation endpoints return empty/`eligible: false` if that pipeline hasn't run yet, or if a location falls in a "waspada" (medium-risk) zone, since the analytics pipeline only precomputes reallocation candidates for "bahaya" (high-risk) zones today.
+
+`/api/chat` additionally requires `GEMINI_API_KEY` to be set — see `src/services/chat/`.
 
 The server listens on `PORT` (default `4000`) via `src/config/index.ts`.
 
@@ -160,7 +175,9 @@ The raw OpenAPI 3.0 document is available at `GET /api/docs.json`. The spec is h
 │   ├── scripts/          # One-off CLI entry points (batch ingest jobs, data quality check)
 │   ├── services/         # Application and domain business logic
 │   │   ├── ingest/        # Batch ingest jobs (MAPID, OSM, Sentinel-2) — see "Data ingestion" below
-│   │   └── data-quality/  # Topology/data quality check pipeline — see "Data ingestion" below
+│   │   ├── data-quality/  # Topology/data quality check pipeline — see "Data ingestion" below
+│   │   └── chat/          # Asisten AI TitikTemu chatbot (RAG over titiktemu-analytics tables + Gemini)
+│   ├── types/            # Shared TypeScript types (titiktemu-analytics' output row shapes)
 │   └── validators/       # Request and response validation schemas
 ├── supabase/
 │   └── migrations/       # Database migrations (001_init.sql: PostGIS/users/grid/umkm_report;

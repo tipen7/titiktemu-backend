@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
+import { ZodError } from "zod";
 
 // Cross-cutting HTTP behavior, such as logging or authentication, belongs here.
 export const requestLogger: RequestHandler = (request, _response, next) => {
@@ -23,6 +24,12 @@ export const errorHandler: ErrorRequestHandler = (
   response,
   _next,
 ) => {
+  if (error instanceof ZodError) {
+    response
+      .status(400)
+      .json({ error: "Validation failed", details: error.issues });
+    return;
+  }
   console.error(error);
   response.status(500).json({ error: "Internal Server Error" });
 };
