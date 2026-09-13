@@ -218,18 +218,20 @@ npx tsc --noEmit
 
 ## Database and Supabase
 
-There are two migrations, applied in order:
+There are three files under `supabase/migrations/`, applied in order:
 
 - **`001_init.sql`** — the original Fase 0 schema: the `postgis` extension, `user_role`/`report_status` enums, and skeletal `users`, `grid`, and `umkm_report` tables. This is the partner's auth/reporting foundation — don't repurpose or drop the `users` table here without checking with them first.
 - **`002_analytics_schema.sql`** — the real tables the app actually queries today (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `umkm_businesses`, `dashboard_summary`, plus the `spatial_grids_geojson` view), matching exactly what titiktemu-analytics' batch pipeline writes. These are a separate concern from `001`'s tables — no foreign keys between the two migrations' tables.
+- **`003_seed_real_data.sql`** — real data, not schema: a full snapshot of a genuine titiktemu-analytics pipeline run (v3+v5 real UMKM survey data, 64.7% real/LOOCV-validated model accuracy, n=119) for every table `002` creates. This is what makes a freshly-provisioned database (yours, a teammate's, or a new Supabase project) immediately usable for frontend/backend development and demos without waiting ~30-60 minutes for a real pipeline run. **One-time seed for a fresh, empty database** — re-running it against an already-seeded one fails on duplicate primary keys (expected; a real pipeline run, not this file, is how the data refreshes going forward).
 
-Both are idempotent (`CREATE TABLE IF NOT EXISTS` / `CREATE OR REPLACE VIEW`) and safe to re-run.
+`001` and `002` are idempotent (`CREATE TABLE IF NOT EXISTS` / `CREATE OR REPLACE VIEW`) and safe to re-run; `003` is not (see above).
 
-- **Local development**: `docker compose up -d` applies both migrations automatically, in filename order, against a fresh volume (see "Start the local database" above).
-- **Against a real Supabase project**: create the project in the Supabase dashboard, enable the PostGIS extension under `Database > Extensions`, then run both files against it in order — they're portable between environments:
+- **Local development**: `docker compose up -d` applies all three automatically, in filename order, against a fresh volume (see "Start the local database" above).
+- **Against a real Supabase project**: create the project in the Supabase dashboard, enable the PostGIS extension under `Database > Extensions`, then run all three files against it in order — they're portable between environments:
   ```bash
   psql "$DATABASE_URL" -f supabase/migrations/001_init.sql
   psql "$DATABASE_URL" -f supabase/migrations/002_analytics_schema.sql
+  psql "$DATABASE_URL" -f supabase/migrations/003_seed_real_data.sql
   ```
 - The `users` table is self-contained (its own UUID primary key, no foreign key to Supabase's `auth.users`) so the same migration works identically against local Docker Postgres and a real Supabase project. Revisit this if the team commits to Supabase Auth as the RBAC identity provider.
 - `002`'s tables are also created ad hoc by titiktemu-analytics' `ensure_schema()` (a local-dev convenience for that repo, not the source of truth) -- this migration is the actual source of truth for their shape; keep the two in sync if you change one.
