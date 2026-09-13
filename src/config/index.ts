@@ -9,4 +9,7 @@ export const appConfig = {
     .split(",")
     .map((origin) => origin.trim()),
   databaseUrl: process.env.DATABASE_URL,
+  geminiApiKey: process.env.GEMINI_API_KEY,
+  geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+  mlScoringServiceUrl: process.env.ML_SCORING_SERVICE_URL,
 } as const;

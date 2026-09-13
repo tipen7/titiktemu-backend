@@ -19,5 +19,38 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # Service-name hostnames resolve inside the Compose network; the db
+      # service's 5433 host-port mapping above is only for connecting from
+      # the host machine, not from other containers.
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/titiktemu
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: http://localhost:3000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   db_data:
