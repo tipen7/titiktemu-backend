@@ -192,6 +192,12 @@ export const dashboardSummaryController: RequestHandler = async (
   }
 };
 
+// Powers the account footer/role-aware UI in the sidebar -- requireAuth
+// (see src/middleware/index.ts) guarantees request.user is set here.
+export const meController: RequestHandler = (request, response) => {
+  response.json(request.user);
+};
+
 // Powers Laporan Alokasi.
 export const policyRecommendationsController: RequestHandler = async (
   request,

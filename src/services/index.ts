@@ -6,6 +6,7 @@ import {
   readRepositoryStatus,
   readUmkmById,
   readUmkmList,
+  readUserProfile,
   readZoneAtLocation,
   readZonesGeoJson,
   type UmkmListFilters,
@@ -15,6 +16,7 @@ import type {
   ModelAccuracy,
   ZoneAtLocation,
 } from "../types/analytics.js";
+import type { AuthUser } from "../types/auth.js";
 
 // Services contain application and domain rules between controllers and repositories.
 export interface ServiceStatus {
@@ -170,4 +172,10 @@ export async function getDashboardSummary() {
 
 export async function getPolicyRecommendations(recommendationType?: string) {
   return readPolicyRecommendations(recommendationType);
+}
+
+// --- Auth ---
+
+export async function getUserProfile(id: string): Promise<AuthUser | null> {
+  return readUserProfile(id);
 }

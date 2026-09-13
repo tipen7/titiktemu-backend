@@ -11,10 +11,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "test": "vitest run",
-    "ingest:mapid": "tsx src/scripts/ingest-mapid.ts",
-    "ingest:osm": "tsx src/scripts/ingest-osm.ts",
-    "ingest:sentinel2": "tsx src/scripts/ingest-sentinel2.ts",
-    "check:data-quality": "tsx src/scripts/check-data-quality.ts"
+    "seed:test-users": "tsx src/scripts/seed-test-users.ts"
   },
   "keywords": [],
   "author": "",

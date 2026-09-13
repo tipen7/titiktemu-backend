@@ -8,10 +8,31 @@ import type {
   ReallocationCandidate,
   ZoneAtLocation,
 } from "../types/analytics.js";
+import type { AuthUser } from "../types/auth.js";
 
 // Repositories isolate persistence queries from the service layer.
 export async function readRepositoryStatus(): Promise<DatabaseStatus> {
   return getDatabaseStatus();
+}
+
+// The public.users row is created by the handle_new_user trigger (see
+// supabase/migrations/004_auth_profiles.sql) the moment someone signs up
+// via Supabase Auth -- this only ever reads it.
+export async function readUserProfile(id: string): Promise<AuthUser | null> {
+  const { rows } = await getPool().query<{
+    id: string;
+    email: string;
+    role: AuthUser["role"];
+    full_name: string | null;
+  }>("SELECT id, email, role, full_name FROM users WHERE id = $1", [id]);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    fullName: row.full_name,
+  };
 }
 
 // The tables/view queried below (spatial_grids, gentrification_risk_scores,

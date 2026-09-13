@@ -2,9 +2,9 @@
 
 TypeScript backend service for Titik Temu. The project currently provides a small Express server foundation and is prepared for a layered API backed by Supabase/PostgreSQL.
 
-> **Project status:** Fase 0 (Setup & Foundation) complete. Fase 1/Minggu 1 (Data Preparation) backend scope mostly done: batch ingest jobs for MAPID and OSM land data into PostGIS staging tables, Sentinel-2 NDBI is seeded with sample/precomputed values as an intentional MVP fallback (real computation needs a Python geospatial service that doesn't exist here), and a topology/data quality check pipeline (Hari 5) runs over all of it. The only Minggu 1 MUST item still outstanding is the BPS kepadatan penduduk spatial-join import, deferred until a source data file is available (see "Data ingestion" below). Fase 2/Minggu 3 (AI & Algoritma Engine) gateway-side scope is done: `GET /api/isochrone` (real OSM/pgRouting network analysis), `POST /api/score/risk-classification` + `/tenant-matching` (proxy to the ML team's XGBoost service, mock until it exists), and `POST /api/narrative` (real Gemini LLM orchestration, with timeout + fallback). GWR/XGBoost model training, the FastAPI ML service itself, IDW interpolation, and the GWR cron scheduler are the ML team's responsibility and out of scope for this repo. Other business endpoints (UMKM reports, ESG dashboard, RBAC, etc.) are not implemented yet.
+> **Project status:** Fase 0 (Setup & Foundation) complete. The active architecture reads precomputed output from **titiktemu-analytics** (a separate Python batch pipeline, not in this workspace) via plain SQL: zones/reallocation/model-accuracy, UMKM listing, dashboard summary, and policy recommendations are all served this way, plus an Asisten AI TitikTemu chatbot (Gemini, RAG over those same tables). Auth is wired to Supabase Auth (`requireAuth`/`requireRole` in `src/middleware/index.ts`, `GET /api/auth/me`) but not yet enforced on any of the read-model endpoints above — see "Database and Supabase" below.
 >
-> This repo covers the `/gateway` (Node.js) role only. The `/ml-service` (Python/FastAPI, for GWR/XGBoost/Sentinel-2 processing) and `/infra` components called for in the project plan don't exist yet in this workspace.
+> An earlier in-repo data pipeline (MAPID/OSM/Sentinel-2 batch ingest into this repo's own PostGIS tables, a walking-distance isochrone endpoint, a mock scoring-service proxy, and an on-demand LLM narrative endpoint) was removed after the titiktemu-analytics-backed approach above superseded it and the frontend confirmed it had zero consumers. If you're looking for `grid`/`mapid_staging`/`osm_road`-style tables, adapters, or `/api/isochrone`, `/api/score/*`, `/api/narrative` — they no longer exist; see git history if you need to resurrect any of it.
 
 ## Requirements
 
@@ -109,10 +109,6 @@ pnpm start
 | `pnpm lint` | Check formatting, import order, and lint rules with Biome |
 | `pnpm lint:fix` | Apply Biome's safe fixes |
 | `pnpm test` | Run the Vitest test suite |
-| `pnpm ingest:mapid` | Run the MAPID batch ingest job (see "Data ingestion") |
-| `pnpm ingest:osm` | Run the OSM batch ingest job (see "Data ingestion") |
-| `pnpm ingest:sentinel2` | Run the Sentinel-2 NDBI batch ingest job (see "Data ingestion") |
-| `pnpm check:data-quality` | Run the topology/data quality check pipeline (see "Data ingestion") |
 
 ## Current API
 
@@ -129,14 +125,11 @@ pnpm start
 | `GET` | `/api/umkm/:id` | Single UMKM business detail | UMKM business detail, or 404 |
 | `GET` | `/api/dashboard-summary` | Latest ESG dashboard / Operator beranda summary | Dashboard summary object, or 404 if analytics hasn't run yet |
 | `GET` | `/api/policy-recommendations` | Policy narratives for Laporan Alokasi, optionally filtered by type | Array of policy recommendations |
-| `GET` | `/api/isochrone` | Walking-distance isochrone from the OSM road network (see "AI & algorithm engine") | GeoJSON hull + reached edges |
-| `POST` | `/api/score/risk-classification` | EWS risk classification, proxied to the ML team's scoring service (mock today) | `{"gridId","riskCode","confidence"}` |
-| `POST` | `/api/score/tenant-matching` | Smart Tenant Matching score, proxied to the ML team's scoring service (mock today) | `{"gridId","businessCategory","matchScore"}` |
-| `POST` | `/api/narrative` | LLM policy narrative from a JSON payload (Gemini, with fallback) | `{"narrative","generatedByLlm"}` |
+| `GET` | `/api/auth/me` | Current authenticated user's profile (requires `Authorization: Bearer <Supabase access token>`) | `{id, email, role, fullName}`, or 401 |
 
 `ZoneDetail` (returned by `/api/zones/lookup` and nested in `/api/reallocation`) carries `model_accuracy` too, so a zone's own detail view can show the confidence badge without a second request.
 
-The `/api/zones*`, `/api/reallocation`, `/api/model-accuracy`, `/api/umkm*`, `/api/dashboard-summary`, and `/api/policy-recommendations` endpoints read tables written by **titiktemu-analytics**' batch pipeline (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `spatial_grids_geojson`, `umkm_businesses`, `dashboard_summary`) via plain SQL against `DATABASE_URL` -- see `src/repositories/index.ts`. **This is a separate schema from the one this repo's own `supabase/migrations/` manages** (`grid`, `mapid_staging`, `osm_road`, etc. -- see "Data ingestion" below); titiktemu-analytics is an external Python repo not present in this workspace, and manages its own tables independently. Zone/reallocation endpoints return empty/`eligible: false` if that pipeline hasn't run yet, or if a location falls in a "waspada" (medium-risk) zone, since the analytics pipeline only precomputes reallocation candidates for "bahaya" (high-risk) zones today.
+The `/api/zones*`, `/api/reallocation`, `/api/model-accuracy`, `/api/umkm*`, `/api/dashboard-summary`, and `/api/policy-recommendations` endpoints read tables written by **titiktemu-analytics**' batch pipeline (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `spatial_grids_geojson`, `umkm_businesses`, `dashboard_summary`) via plain SQL against `DATABASE_URL` -- see `src/repositories/index.ts`. titiktemu-analytics is an external Python repo not present in this workspace; it manages its own tables independently of `supabase/migrations/`. Zone/reallocation endpoints return empty/`eligible: false` if that pipeline hasn't run yet, or if a location falls in a "waspada" (medium-risk) zone, since the analytics pipeline only precomputes reallocation candidates for "bahaya" (high-risk) zones today.
 
 `/api/chat` additionally requires `GEMINI_API_KEY` to be set — see `src/services/chat/`.
 
@@ -160,29 +153,20 @@ The raw OpenAPI 3.0 document is available at `GET /api/docs.json`. The spec is h
 │   ├── index.ts          # Application bootstrap (listen())
 │   ├── app.ts            # Express app construction (importable, no listen())
 │   ├── app.test.ts        # Smoke test for the app
-│   ├── adapters/         # External integration adapters
-│   │   ├── mapid/         # MAPID adapter interface + mock (real contract unconfirmed, Asumsi A3)
-│   │   ├── osm/           # OSM adapter interface + real Overpass API implementation + mock
-│   │   ├── sentinel2/     # Sentinel-2 NDBI adapter interface + mock (sample/precomputed fallback)
-│   │   ├── gemini/        # Gemini narrative adapter interface + real implementation + mock
-│   │   └── scoring/       # ML scoring (XGBoost) adapter interface + real HTTP client + mock
 │   ├── config/           # Configuration and environment parsing
 │   ├── controllers/      # HTTP request/response handlers
 │   ├── db/               # Database and Supabase client setup
 │   ├── middleware/       # Express middleware such as security and auth
 │   ├── repositories/     # Persistence and database access layer
 │   ├── routes/           # Route and router registration
-│   ├── scripts/          # One-off CLI entry points (batch ingest jobs, data quality check)
 │   ├── services/         # Application and domain business logic
-│   │   ├── ingest/        # Batch ingest jobs (MAPID, OSM, Sentinel-2) — see "Data ingestion" below
-│   │   ├── data-quality/  # Topology/data quality check pipeline — see "Data ingestion" below
 │   │   └── chat/          # Asisten AI TitikTemu chatbot (RAG over titiktemu-analytics tables + Gemini)
 │   ├── types/            # Shared TypeScript types (titiktemu-analytics' output row shapes)
 │   └── validators/       # Request and response validation schemas
 ├── supabase/
-│   └── migrations/       # Database migrations (001_init.sql: PostGIS/users/grid/umkm_report;
-│                          # 002_ingest_pipeline.sql: ingest staging tables + job audit log;
-│                          # 003_isochrone_topology.sql: pgRouting + osm_road topology columns)
+│   └── migrations/       # Database migrations (001_init.sql: PostGIS extension, users, grid, umkm_report;
+│                          # 002/003: local mock stand-in for titiktemu-analytics' schema + seed data;
+│                          # 004_auth_profiles.sql: wires users to Supabase Auth)
 ├── .github/workflows/    # CI (lint, build, test on push/PR to main)
 ├── docker-compose.yml    # Local db (PostgreSQL+PostGIS) + redis + app (gateway) for development
 ├── Dockerfile            # Production container build
@@ -195,7 +179,7 @@ The raw OpenAPI 3.0 document is available at `GET /api/docs.json`. The spec is h
 └── README.md             # Project documentation
 ```
 
-The `src/` subdirectories describe the intended ownership boundaries. New endpoints should normally flow through `routes` -> `controllers` -> `services` -> `repositories`, with validation and cross-cutting behavior handled by `validators` and `middleware`. Keep database-specific details inside `db` and `repositories` so controllers remain focused on HTTP concerns. Keep external API integrations inside `adapters`, behind an interface, so a mock implementation can stand in until the real integration's contract is confirmed.
+The `src/` subdirectories describe the intended ownership boundaries. New endpoints should normally flow through `routes` -> `controllers` -> `services` -> `repositories`, with validation and cross-cutting behavior handled by `validators` and `middleware`. Keep database-specific details inside `db` and `repositories` so controllers remain focused on HTTP concerns. If a feature needs an external API integration, put it behind an adapter interface in a new `src/adapters/` directory (see "Development conventions" below) — no adapters exist today.
 
 ## Dependencies
 
@@ -237,100 +221,34 @@ npx tsc --noEmit
 
 ## Database and Supabase
 
-`supabase/migrations/001_init.sql` contains the initial schema: the `postgis` extension, `user_role`/`report_status` enums, and skeletal `users`, `grid`, and `umkm_report` tables. `grid` intentionally holds only geometry for now — Fase 1 will add feature columns (`poi_count`, `ndbi_mean`, `dist_to_station`, etc.), likely as a linked `master_grid_dataset` table rather than more columns here.
+`supabase/migrations/001_init.sql` contains the original skeletal schema: the `postgis` extension, `user_role`/`report_status` enums, and `users`, `grid`, `umkm_report` tables. None of these are populated or read by anything in this repo today — kept for a possible future in-house pipeline or the UMKM self-report write path.
 
-`supabase/migrations/002_ingest_pipeline.sql` adds the Fase 1 batch ingest landing zone: `ingest_job_log` (audit trail), `mapid_staging`, `osm_road`, `osm_poi`, `sentinel2_ndbi_staging`, and `bps_kepadatan_penduduk`. These hold raw external data before a later ETL/spatial-join step transforms it into `master_grid_dataset`.
+**`supabase/migrations/002_analytics_mock_schema.sql` and `003_analytics_mock_seed.sql` are a mock stand-in for titiktemu-analytics' real schema.** The read-model endpoints (`/api/zones`, `/api/zones/lookup`, `/api/reallocation`, `/api/model-accuracy`, `/api/umkm*`, `/api/dashboard-summary`, `/api/policy-recommendations`, `/api/chat`) all read tables (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `spatial_grids_geojson`, `umkm_businesses`, `dashboard_summary`) that are supposed to be owned and populated by **titiktemu-analytics**, a separate Python batch pipeline not present in this workspace. Since that pipeline has never been run against local/dev databases, those tables didn't exist and every endpoint reading them 500'd. `002`/`003` reconstruct that schema (inferred purely from the SQL in `src/repositories/index.ts` — not sourced from titiktemu-analytics itself) and seed it with fabricated mock data (12 grid cells, a few UMKM businesses, one dashboard summary run) so local development has something to serve.
 
-- **Local development**: `docker compose up -d` applies every file under `supabase/migrations/` automatically against a fresh volume (see "Start the local stack" above).
-- **Against a real Supabase project**: create the project in the Supabase dashboard, enable the PostGIS extension under `Database > Extensions`, then run each file against it in order — they're portable between environments:
+- **This is mock data, not real survey/model output.** Replace `002`/`003` with titiktemu-analytics' actual migration + a real batch run once that pipeline is wired up to this database — don't treat the seeded numbers (e.g. the 35.1% model accuracy) as real.
+- Re-seeding is safe: every insert in `003` is `ON CONFLICT DO NOTHING` (or guarded for tables without a natural unique key), so re-running it against a database that already has this data is a no-op.
+- **Local development**: `docker compose up -d` applies every file under `supabase/migrations/` automatically, in order, against a fresh volume (see "Start the local stack" above) — no separate seeding step needed for a new setup. To apply against an *existing* running container (e.g. after pulling new migration files), run them manually:
+  ```bash
+  docker exec -i <db-container-name> psql -U postgres -d titiktemu < supabase/migrations/002_analytics_mock_schema.sql
+  docker exec -i <db-container-name> psql -U postgres -d titiktemu < supabase/migrations/003_analytics_mock_seed.sql
+  ```
+- **Against a real Supabase project**: create the project in the Supabase dashboard, enable the PostGIS extension under `Database > Extensions`, then run each migration against it in order — they're portable between environments:
   ```bash
   psql "$DATABASE_URL" -f supabase/migrations/001_init.sql
-  psql "$DATABASE_URL" -f supabase/migrations/002_ingest_pipeline.sql
+  psql "$DATABASE_URL" -f supabase/migrations/002_analytics_mock_schema.sql
+  psql "$DATABASE_URL" -f supabase/migrations/003_analytics_mock_seed.sql
   ```
-- The `users` table is self-contained (its own UUID primary key, no foreign key to Supabase's `auth.users`) so the same migration works identically against local Docker Postgres and a real Supabase project. Revisit this if the team commits to Supabase Auth as the RBAC identity provider.
+- **`supabase/migrations/004_auth_profiles.sql` wires `users` to Supabase Auth** (the team committed to it as the RBAC identity provider): `users.id` now references `auth.users(id)`, `password_hash` is gone (Supabase Auth owns credentials), and a `handle_new_user` trigger creates the matching `public.users` row -- with the role from `supabase.auth.signUp`'s `options.data.role` -- the moment someone signs up. Local docker-compose Postgres has no real `auth` schema, so this migration also creates a minimal shim `auth.users` (guarded with `IF NOT EXISTS`, a no-op against a real Supabase project) purely so the schema/trigger/FK can exist locally; nothing writes to that shim automatically (no local GoTrue), so exercising real signup/login end-to-end requires pointing `DATABASE_URL`/`SUPABASE_URL` at the real Supabase project.
+- `src/middleware/index.ts` exports `requireAuth` (verifies the `Authorization: Bearer <Supabase access token>` header via `src/lib/supabase.ts`'s service-role client, then loads the `public.users` profile) and `requireRole(...roles)` -- apply both to any endpoint that should require login/a specific role. Only `GET /api/auth/me` uses them today; none of the existing read-model endpoints are gated yet.
 - Keep persistence logic in `src/repositories/` and database client setup in `src/db/`.
 - Document any new required variables and migration commands here as they're added.
-
-## Data ingestion (Fase 1 / Minggu 1)
-
-Per Asumsi A4 in the project plan, external data (MAPID, OSM, Sentinel-2, BPS) is pulled in batch during data preparation, not via live calls at request time. Each batch job writes an `ingest_job_log` row (status, record count, error message) alongside the staging rows it inserts:
-
-| Command | Source | Adapter | Writes to |
-| --- | --- | --- | --- |
-| `pnpm ingest:mapid` | Struk Go / Menu Go / Properti Go | `MockMapidAdapter` (real contract unconfirmed — Asumsi A3) | `mapid_staging` |
-| `pnpm ingest:osm` | Overpass API, road network + POI, over `STUDY_CORRIDOR_BBOX` (`src/config/corridor.ts`) | `OverpassOsmAdapter` (real, public API) | `osm_road`, `osm_poi` |
-| `pnpm ingest:sentinel2` | One NDBI value per row in `grid` | `MockSentinel2Adapter` (sample/precomputed fallback — see below) | `sentinel2_ndbi_staging` |
-
-All three require `DATABASE_URL` to point at a reachable Postgres with `002_ingest_pipeline.sql` applied. `ingest:sentinel2` additionally depends on `grid` already having rows (the "Import & grid-ing data koridor studi" task); until then it runs successfully but ingests 0 records.
-
-**Sentinel-2 NDBI is intentionally a placeholder, not a real computation.** Per test.md's risk mitigation ("jika waktu tidak cukup, gunakan data NDBI sample/precomputed untuk MVP demo"), `MockSentinel2Adapter` returns a fixed sample `ndbiMean` for every grid cell instead of deriving it from actual Sentinel-2 imagery. Real NDBI computation needs a Python geospatial stack (rasterio/eodag, per the risk register) that doesn't exist in this workspace — swap `getSentinel2Adapter()`'s return value in `src/adapters/sentinel2/index.ts` once that exists; `runSentinel2IngestJob` itself won't need to change.
-
-**⚠️ Open item — BPS kepadatan penduduk import is not started.** `bps_kepadatan_penduduk` table exists (`002_ingest_pipeline.sql`) but nothing writes to it. This needs an actual source file (kelurahan boundaries + density figures, e.g. from BPS/BIG) before a spatial-join importer can be written — deliberately deferred until that file is available. Don't let this silently slip past Minggu 1.
-
-Other known gaps, not yet implemented:
-- **MAPID "Activity" dataset** — the sprint doc mentions it, but the existing `MapidAdapter` interface only covers Struk Go/Menu Go/Properti Go; no schema for Activity exists yet.
-- **`STUDY_CORRIDOR_BBOX`** is an approximate bounding box around the MRT Lebak Bulus–Bundaran HI corridor, not the final buffered corridor geometry from the "Import & grid-ing data koridor studi" task.
-
-### Data quality check (Hari 5 checkpoint)
-
-`pnpm check:data-quality` runs the Fase 1 "validasi topologi & data quality check pipeline" task. It runs a fixed set of independent checks against whatever has already been ingested and records the result as an `ingest_job_log` row (`source = 'data_quality'`) with the full findings in its `metadata` column:
-
-| Check | Severity | What it catches |
-| --- | --- | --- |
-| `grid_invalid_geometry` | error | `grid` rows failing `ST_IsValid` |
-| `osm_road_invalid_geometry` | error | `osm_road` rows failing `ST_IsValid` |
-| `osm_poi_invalid_geometry` | error | `osm_poi` rows failing `ST_IsValid` |
-| `mapid_staging_missing_location` | warning | `mapid_staging` rows with a null `location` |
-| `grid_missing_ndbi_coverage` | warning | `grid` cells with no matching `sentinel2_ndbi_staging` row |
-| `ingest_job_stuck_running` | error | ingest jobs still `running` after 1 hour (likely crashed) |
-| `ingest_job_failed_recent` | warning | ingest jobs that failed in the last 24 hours |
-
-The script exits non-zero if any `error`-severity issue is found (useful as a CI/pre-deploy gate later), and always prints a human-readable summary. Add new checks to `CHECKS` in `src/services/data-quality/data-quality-check.service.ts` as the staging schema grows (e.g. once BPS import lands).
-
-## AI & algorithm engine (Fase 2 / Minggu 3)
-
-**Scope note:** GWR/XGBoost model training, the FastAPI ML service that serves those models, IDW spatial interpolation, and the weekly GWR cron scheduler are the ML team's responsibility (Python/PySAL/FastAPI) and are out of scope for this repo. What's below is only the gateway-side work: a real network-analysis endpoint, and two integration points designed to plug into the ML team's service once it exists.
-
-### Isochrone (`GET /api/isochrone`)
-
-Real implementation, not a mock — computes actual walking-distance reachability from the `osm_road` network using pgRouting:
-
-```
-GET /api/isochrone?lat=-6.2&lng=106.816666&maxDistanceMeters=800
-```
-
-`maxDistanceMeters` defaults to `800` (the spec's "0-800m / 10 menit jalan kaki") and is capped at 2000. The response is `{ origin, maxDistanceMeters, reachedNodeCount, hull, edges }`, where `hull` is a GeoJSON `Polygon` (concave hull over reached network nodes) and `edges` are the reached `osm_road` segments as GeoJSON `LineString`s. Returns `404` if no road network exists near the given point.
-
-How it works, in `src/repositories/isochrone.repository.ts`:
-1. Snap `(lat, lng)` to the nearest node in `osm_road_vertices_pgr`.
-2. Run `pgr_drivingDistance` from that node, using `length_m` (real-world meters via `geom::geography`, independent of the degree-based SRID) as edge cost, excluding motorway/trunk road types.
-3. Build a concave hull over the reached nodes and fetch the reached edges.
-
-Requires `supabase/migrations/003_isochrone_topology.sql` (enables the `pgrouting` extension, adds `osm_road.source`/`target`/`length_m`) and a built routing graph. `runOsmIngestJob` (`pnpm ingest:osm`) now calls `rebuildRoadTopology()` after every ingest, so the graph is always rebuilt from the latest data automatically — no separate step needed.
-
-**⚠️ Not verified against a live database.** This was written and type-checked but not run end to end (Docker wasn't available in the environment it was built in). Run `pnpm ingest:osm` then hit `/api/isochrone` against real data before relying on it.
-
-### Scoring proxy (`POST /api/score/risk-classification`, `POST /api/score/tenant-matching`)
-
-The gateway exposes these publicly and forwards to the ML team's XGBoost service via `ScoringAdapter` (`src/adapters/scoring/`) — same adapter-pattern-with-mock convention used for MAPID. `getScoringAdapter()` returns:
-- `MockScoringAdapter` (deterministic placeholder, not a model) if `ML_SCORING_SERVICE_URL` is unset — the default today.
-- `HttpScoringAdapter` once `ML_SCORING_SERVICE_URL` is set, POSTing to `{baseUrl}/score/risk-classification` / `{baseUrl}/score/tenant-matching` with a 1.2s timeout (keeps the gateway under the spec's < 1.5s p95 once its own overhead is added).
-
-The request/response contract (`src/validators/scoring.validators.ts`) is this repo's own assumption based on test.md's `master_grid_dataset` feature columns (`poiCount`, `distExitTolM`, `distStationM`, `ndbiMean`, `kepadatanPenduduk`, `rentSurgeReported`) — confirm it against whatever the ML team's FastAPI service actually expects before wiring up `HttpScoringAdapter` for real, the same way MAPID's contract needs confirming (Asumsi A3).
-
-### LLM narrative orchestration (`POST /api/narrative`)
-
-Real Gemini integration (not a mock, when `GEMINI_API_KEY` is set). Accepts a `PolicyNarrativePayload` (`{ gridId, riskCode, keyMetrics }` — already-computed data) and returns `{ narrative, generatedByLlm }`:
-- `RealGeminiAdapter` (`src/adapters/gemini/gemini-adapter.ts`) calls the Gemini API with a 5s timeout (test.md's risk mitigation) and a prompt that explicitly tells the model to narrate, not recalculate (Asumsi A5).
-- If the call fails or times out, `generateNarrative` (`src/services/narrative.service.ts`) catches it and returns `{ narrative: null, generatedByLlm: false }` — **HTTP 200, not an error** — so callers can fall back to showing the raw JSON, per the same risk mitigation.
-- Falls back to `MockGeminiAdapter` (canned string, no network call) whenever `GEMINI_API_KEY` is unset — set it in `.env` to exercise the real path. `GEMINI_MODEL` defaults to `gemini-2.5-flash`; override it if that model id changes or isn't available on your API key.
 
 ## Development conventions
 
 - Use the existing TypeScript and ESM configuration; relative imports must include an explicit `.js` extension (required by `moduleResolution: nodenext`).
 - Validate untrusted request data at the API boundary with Zod schemas.
 - Keep controllers thin and move business rules into services.
-- Put external API integrations behind an adapter interface in `src/adapters/`, with a mock implementation validated through its Zod schema, so development isn't blocked on an unconfirmed third-party contract.
+- If you add a new external API integration, put it behind an adapter interface in `src/adapters/`, with a mock implementation validated through its Zod schema, so development isn't blocked on an unconfirmed third-party contract. (No adapters exist today — the previous MAPID/OSM/Sentinel-2/scoring ones were removed as unused; the chatbot calls Gemini directly instead, see `src/services/chat/gemini-chat.ts`.)
 - Do not expose `SUPABASE_SERVICE_ROLE_KEY` to browser clients.
 - Add or update focused tests as soon as endpoint behavior is introduced.
 - Run `pnpm lint`, `pnpm build`, and `pnpm test` before opening a pull request — CI runs all three on every PR to `main`.
