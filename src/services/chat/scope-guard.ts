@@ -1,6 +1,6 @@
 // First line of defense against prompt injection and off-topic prompts --
 // a cheap, deterministic check BEFORE any LLM call. This does not replace
-// the LLM-level guard (see gemini-chat.ts's structured `in_scope` output)
+// the LLM-level guard (see llm/prompt.ts's structured `in_scope` output)
 // -- it's defense-in-depth: an obviously off-topic or injection-shaped
 // message never reaches the model at all, so it can't be talked into
 // answering it, and no API quota is spent on it either.

@@ -2,7 +2,7 @@
 
 TypeScript backend service for Titik Temu. The project currently provides a small Express server foundation and is prepared for a layered API backed by Supabase/PostgreSQL.
 
-> **Project status:** Fase 0 (Setup & Foundation) complete. The active architecture reads precomputed output from **titiktemu-analytics** (a separate Python batch pipeline, not in this workspace) via plain SQL: zones/reallocation/model-accuracy, UMKM listing, dashboard summary, and policy recommendations are all served this way, plus an Asisten AI TitikTemu chatbot (Gemini, RAG over those same tables). Auth is wired to Supabase Auth (`requireAuth`/`requireRole` in `src/middleware/index.ts`, `GET /api/auth/me`) but not yet enforced on any of the read-model endpoints above — see "Database and Supabase" below.
+> **Project status:** Fase 0 (Setup & Foundation) complete. The active architecture reads precomputed output from **titiktemu-analytics** (a separate Python batch pipeline, not in this workspace) via plain SQL: zones/reallocation/model-accuracy, UMKM listing, dashboard summary, and policy recommendations are all served this way, plus an Asisten AI TitikTemu chatbot (RAG over those same tables, LLM provider selectable via `LLM_PROVIDER` -- Gemini, OpenAI, or Claude). Auth is wired to Supabase Auth (`requireAuth`/`requireRole` in `src/middleware/index.ts`, `GET /api/auth/me`) but not yet enforced on any of the read-model endpoints above — see "Database and Supabase" below.
 >
 > An earlier in-repo data pipeline (MAPID/OSM/Sentinel-2 batch ingest into this repo's own PostGIS tables, a walking-distance isochrone endpoint, a mock scoring-service proxy, and an on-demand LLM narrative endpoint) was removed after the titiktemu-analytics-backed approach above superseded it and the frontend confirmed it had zero consumers. If you're looking for `grid`/`mapid_staging`/`osm_road`-style tables, adapters, or `/api/isochrone`, `/api/score/*`, `/api/narrative` — they no longer exist; see git history if you need to resurrect any of it.
 > **Project status:** Core business endpoints are implemented and read real data from titiktemu-analytics' batch pipeline (zones, reallocation, model accuracy, UMKM listings, dashboard summary, policy recommendations) plus a scope-limited RAG chatbot. The layered architecture (routes → controllers → services → repositories) is wired end-to-end. Authentication is not yet implemented (in progress separately) — endpoints that would otherwise be user-scoped currently serve all data unscoped.
@@ -56,8 +56,13 @@ Set values appropriate for your local environment. Do not commit `.env`, Supabas
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase server-side key | Not yet used by any endpoint; keep private |
 | `DATABASE_URL` | PostgreSQL connection string. Used by `GET /api/status` to report DB connectivity, and by `/api/zones`, `/api/zones/lookup`, `/api/reallocation`, `/api/umkm`, `/api/dashboard-summary`, `/api/policy-recommendations` to read titiktemu-analytics' output tables | Yes |
 | `CORS_ORIGIN` | Comma-separated allowed browser origins | No. Defaults to `http://localhost:3000`. |
-| `GEMINI_API_KEY` | Google AI Studio key for the `/api/chat` RAG chatbot | Yes, for `/api/chat` (other endpoints work without it) |
-| `GEMINI_MODEL` | Gemini model name for `/api/chat` | No. Defaults to `gemini-3.6-flash`. |
+| `LLM_PROVIDER` | LLM backend for the `/api/chat` RAG chatbot: `gemini` \| `openai` \| `claude` | No. Defaults to `gemini`. |
+| `GEMINI_API_KEY` | Google AI Studio key, used when `LLM_PROVIDER=gemini` | Yes, for `/api/chat` under that provider (other endpoints work without it) |
+| `GEMINI_MODEL` | Gemini model name | No. Defaults to `gemini-3.6-flash`. |
+| `OPENAI_API_KEY` | OpenAI key, used when `LLM_PROVIDER=openai` | Yes, for `/api/chat` under that provider |
+| `OPENAI_MODEL` | OpenAI model name | No. Defaults to `gpt-4o-mini`. |
+| `ANTHROPIC_API_KEY` | Anthropic key, used when `LLM_PROVIDER=claude` | Yes, for `/api/chat` under that provider |
+| `ANTHROPIC_MODEL` | Claude model name | No. Defaults to `claude-3-5-haiku-latest`. |
 
 The values in `.env.example` are placeholders. Replace them before enabling database or Supabase-backed features.
 
@@ -134,7 +139,7 @@ pnpm start
 
 The `/api/zones*`, `/api/reallocation`, `/api/model-accuracy`, `/api/umkm*`, `/api/dashboard-summary`, and `/api/policy-recommendations` endpoints read tables written by **titiktemu-analytics**' batch pipeline (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `spatial_grids_geojson`, `umkm_businesses`, `dashboard_summary`) via plain SQL against `DATABASE_URL` -- see `src/repositories/index.ts`. titiktemu-analytics is an external Python repo not present in this workspace; it manages its own tables independently of `supabase/migrations/`. Zone/reallocation endpoints return empty/`eligible: false` if that pipeline hasn't run yet, or if a location falls in a "waspada" (medium-risk) zone, since the analytics pipeline only precomputes reallocation candidates for "bahaya" (high-risk) zones today.
 
-`/api/chat` additionally requires `GEMINI_API_KEY` to be set — see `src/services/chat/`.
+`/api/chat` additionally requires the API key for whichever `LLM_PROVIDER` is selected — see `src/services/chat/llm/`.
 | `GET` | `/api/model-accuracy` | Latest EWS/matching_score model accuracy -- one figure per batch run, not per cell | `{accuracy_pct, n, ci_95_low_pct, ci_95_high_pct, confidence_level, computed_at}`, or 404 if analytics hasn't run yet |
 | `GET` | `/api/umkm?search=&ews_code=&district=&limit=&offset=` | Filterable list of real UMKM business records (Discovery Map, Self-Tracker, Tenant Matching) | `{rows: UmkmBusiness[], total}` |
 | `GET` | `/api/umkm/:id` | Single UMKM business detail | `UmkmBusiness`, or 404 |
@@ -175,7 +180,7 @@ The raw OpenAPI 3.0 document is available at `GET /api/docs.json`. The spec is h
 │   ├── repositories/     # Persistence and database access layer
 │   ├── routes/           # Route and router registration
 │   ├── services/         # Application and domain business logic
-│   │   └── chat/          # Asisten AI TitikTemu chatbot (RAG over titiktemu-analytics tables + Gemini)
+│   │   └── chat/          # Asisten AI TitikTemu chatbot (RAG over titiktemu-analytics tables + llm/ provider dispatch)
 │   ├── types/            # Shared TypeScript types (titiktemu-analytics' output row shapes)
 │   └── validators/       # Request and response validation schemas
 ├── supabase/
@@ -281,7 +286,7 @@ Both are idempotent (`CREATE TABLE IF NOT EXISTS` / `CREATE OR REPLACE VIEW`) an
 - Use the existing TypeScript and ESM configuration; relative imports must include an explicit `.js` extension (required by `moduleResolution: nodenext`).
 - Validate untrusted request data at the API boundary with Zod schemas.
 - Keep controllers thin and move business rules into services.
-- If you add a new external API integration, put it behind an adapter interface in `src/adapters/`, with a mock implementation validated through its Zod schema, so development isn't blocked on an unconfirmed third-party contract. (No adapters exist today — the previous MAPID/OSM/Sentinel-2/scoring ones were removed as unused; the chatbot calls Gemini directly instead, see `src/services/chat/gemini-chat.ts`.)
+- If you add a new external API integration, put it behind an adapter interface in `src/adapters/`, with a mock implementation validated through its Zod schema, so development isn't blocked on an unconfirmed third-party contract. (No adapters exist today — the previous MAPID/OSM/Sentinel-2/scoring ones were removed as unused; the chatbot calls its LLM provider directly instead, see `src/services/chat/llm/` -- Gemini, OpenAI, or Claude, selected via `LLM_PROVIDER`.)
 - Do not expose `SUPABASE_SERVICE_ROLE_KEY` to browser clients.
 - Add or update focused tests as soon as endpoint behavior is introduced.
 - Run `pnpm lint`, `pnpm build`, and `pnpm test` before opening a pull request — CI runs all three on every PR to `main`.

@@ -5,13 +5,13 @@
 import {
   type ChatRole,
   type ChatTurn,
-  callGeminiChat,
-  GeminiQuotaExceededError,
-} from "./gemini-chat.js";
+  callChat,
+  LlmQuotaExceededError,
+} from "./llm/index.js";
 import { buildContext, formatContext } from "./retrieval.js";
 import { checkScope, REFUSAL_MESSAGES } from "./scope-guard.js";
 
-export type { ChatRole, ChatTurn } from "./gemini-chat.js";
+export type { ChatRole, ChatTurn } from "./llm/index.js";
 
 export interface ChatResponse {
   answer: string;
@@ -36,11 +36,11 @@ export async function getChatResponse(
   const context = await buildContext(message);
   const formattedContext = formatContext(context);
 
-  let result: Awaited<ReturnType<typeof callGeminiChat>>;
+  let result: Awaited<ReturnType<typeof callChat>>;
   try {
-    result = await callGeminiChat(message, role, formattedContext, history);
+    result = await callChat(message, role, formattedContext, history);
   } catch (error) {
-    if (error instanceof GeminiQuotaExceededError) {
+    if (error instanceof LlmQuotaExceededError) {
       return {
         answer:
           "Asisten AI sedang tidak tersedia (kuota API tercapai). Silakan coba lagi nanti.",

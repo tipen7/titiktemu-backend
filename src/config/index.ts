@@ -19,8 +19,16 @@ export const appConfig = {
     .split(",")
     .map((origin) => origin.trim()),
   databaseUrl: process.env.DATABASE_URL,
+  llmProvider: (process.env.LLM_PROVIDER ?? "gemini") as
+    | "gemini"
+    | "openai"
+    | "claude",
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
   geminiModel: process.env.GEMINI_MODEL ?? "gemini-3.6-flash",
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  anthropicModel: process.env.ANTHROPIC_MODEL ?? "claude-3-5-haiku-latest",
   supabaseUrl: process.env.SUPABASE_URL ?? "",
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",

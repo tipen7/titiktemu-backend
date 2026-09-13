@@ -46,6 +46,13 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/titiktemu
       REDIS_URL: redis://redis:6379
       CORS_ORIGIN: http://localhost:3000
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL}
     depends_on:
       db:
         condition: service_healthy
