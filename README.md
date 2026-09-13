@@ -5,6 +5,7 @@ TypeScript backend service for Titik Temu. The project currently provides a smal
 > **Project status:** Fase 0 (Setup & Foundation) complete. The active architecture reads precomputed output from **titiktemu-analytics** (a separate Python batch pipeline, not in this workspace) via plain SQL: zones/reallocation/model-accuracy, UMKM listing, dashboard summary, and policy recommendations are all served this way, plus an Asisten AI TitikTemu chatbot (Gemini, RAG over those same tables). Auth is wired to Supabase Auth (`requireAuth`/`requireRole` in `src/middleware/index.ts`, `GET /api/auth/me`) but not yet enforced on any of the read-model endpoints above — see "Database and Supabase" below.
 >
 > An earlier in-repo data pipeline (MAPID/OSM/Sentinel-2 batch ingest into this repo's own PostGIS tables, a walking-distance isochrone endpoint, a mock scoring-service proxy, and an on-demand LLM narrative endpoint) was removed after the titiktemu-analytics-backed approach above superseded it and the frontend confirmed it had zero consumers. If you're looking for `grid`/`mapid_staging`/`osm_road`-style tables, adapters, or `/api/isochrone`, `/api/score/*`, `/api/narrative` — they no longer exist; see git history if you need to resurrect any of it.
+> **Project status:** Core business endpoints are implemented and read real data from titiktemu-analytics' batch pipeline (zones, reallocation, model accuracy, UMKM listings, dashboard summary, policy recommendations) plus a scope-limited RAG chatbot. The layered architecture (routes → controllers → services → repositories) is wired end-to-end. Authentication is not yet implemented (in progress separately) — endpoints that would otherwise be user-scoped currently serve all data unscoped.
 
 ## Requirements
 
@@ -53,8 +54,10 @@ Set values appropriate for your local environment. Do not commit `.env`, Supabas
 | `SUPABASE_URL` | Supabase project URL | Not yet used by any endpoint |
 | `SUPABASE_ANON_KEY` | Supabase public/anonymous API key | Not yet used by any endpoint |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase server-side key | Not yet used by any endpoint; keep private |
-| `DATABASE_URL` | PostgreSQL connection string. Used by `GET /api/status` to report DB connectivity, and by `/api/zones`, `/api/zones/lookup`, `/api/reallocation` to read titiktemu-analytics' output tables | Yes |
+| `DATABASE_URL` | PostgreSQL connection string. Used by `GET /api/status` to report DB connectivity, and by `/api/zones`, `/api/zones/lookup`, `/api/reallocation`, `/api/umkm`, `/api/dashboard-summary`, `/api/policy-recommendations` to read titiktemu-analytics' output tables | Yes |
 | `CORS_ORIGIN` | Comma-separated allowed browser origins | No. Defaults to `http://localhost:3000`. |
+| `GEMINI_API_KEY` | Google AI Studio key for the `/api/chat` RAG chatbot | Yes, for `/api/chat` (other endpoints work without it) |
+| `GEMINI_MODEL` | Gemini model name for `/api/chat` | No. Defaults to `gemini-3.6-flash`. |
 
 The values in `.env.example` are placeholders. Replace them before enabling database or Supabase-backed features.
 
@@ -132,6 +135,18 @@ pnpm start
 The `/api/zones*`, `/api/reallocation`, `/api/model-accuracy`, `/api/umkm*`, `/api/dashboard-summary`, and `/api/policy-recommendations` endpoints read tables written by **titiktemu-analytics**' batch pipeline (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `spatial_grids_geojson`, `umkm_businesses`, `dashboard_summary`) via plain SQL against `DATABASE_URL` -- see `src/repositories/index.ts`. titiktemu-analytics is an external Python repo not present in this workspace; it manages its own tables independently of `supabase/migrations/`. Zone/reallocation endpoints return empty/`eligible: false` if that pipeline hasn't run yet, or if a location falls in a "waspada" (medium-risk) zone, since the analytics pipeline only precomputes reallocation candidates for "bahaya" (high-risk) zones today.
 
 `/api/chat` additionally requires `GEMINI_API_KEY` to be set — see `src/services/chat/`.
+| `GET` | `/api/model-accuracy` | Latest EWS/matching_score model accuracy -- one figure per batch run, not per cell | `{accuracy_pct, n, ci_95_low_pct, ci_95_high_pct, confidence_level, computed_at}`, or 404 if analytics hasn't run yet |
+| `GET` | `/api/umkm?search=&ews_code=&district=&limit=&offset=` | Filterable list of real UMKM business records (Discovery Map, Self-Tracker, Tenant Matching) | `{rows: UmkmBusiness[], total}` |
+| `GET` | `/api/umkm/:id` | Single UMKM business detail | `UmkmBusiness`, or 404 |
+| `GET` | `/api/dashboard-summary` | Latest aggregate dashboard metrics (zone counts, by-district breakdown, model accuracy) | `DashboardSummary`, or 404 if analytics hasn't run yet |
+| `GET` | `/api/policy-recommendations` | Narrative policy recommendations per flagged grid cell | `PolicyRecommendation[]` |
+| `POST` | `/api/chat` | Scope-limited RAG chatbot (zones/gentrification/reallocation/tenant-matching/ESG only) for both UMKM and operator users | `{reply, in_scope, ...}` -- see `src/services/chat/` |
+
+`ZoneDetail` (returned by `/api/zones/lookup` and nested in `/api/reallocation`) carries `model_accuracy` too, so a zone's own detail view can show the confidence badge without a second request.
+
+Most endpoints read tables written by **titiktemu-analytics**' batch pipeline (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `umkm_businesses`, `dashboard_summary`, `spatial_grids_geojson` -- see `supabase/migrations/002_analytics_schema.sql`) via plain SQL against `DATABASE_URL` -- see `src/repositories/index.ts`. They return empty/`eligible: false`/404 if that pipeline hasn't run yet, or if a location falls in a "waspada" (medium-risk) zone, since the analytics pipeline only precomputes reallocation candidates for "bahaya" (high-risk) zones today.
+
+None of these endpoints are scoped to a signed-in user yet -- there is no authentication in this repo (see "Project status" above). `/api/umkm` and friends return every real record, not "the current user's" records.
 
 The server listens on `PORT` (default `4000`) via `src/config/index.ts`.
 
@@ -167,6 +182,9 @@ The raw OpenAPI 3.0 document is available at `GET /api/docs.json`. The spec is h
 │   └── migrations/       # Database migrations (001_init.sql: PostGIS extension, users, grid, umkm_report;
 │                          # 002/003: local mock stand-in for titiktemu-analytics' schema + seed data;
 │                          # 004_auth_profiles.sql: wires users to Supabase Auth)
+│   └── migrations/       # Database migrations (001_init.sql: PostGIS, users, grid, umkm_report;
+│                         #   002_analytics_schema.sql: the real tables the app queries today --
+│                         #   spatial_grids, gentrification_risk_scores, umkm_businesses, etc.)
 ├── .github/workflows/    # CI (lint, build, test on push/PR to main)
 ├── docker-compose.yml    # Local db (PostgreSQL+PostGIS) + redis + app (gateway) for development
 ├── Dockerfile            # Production container build
@@ -240,6 +258,21 @@ npx tsc --noEmit
   ```
 - **`supabase/migrations/004_auth_profiles.sql` wires `users` to Supabase Auth** (the team committed to it as the RBAC identity provider): `users.id` now references `auth.users(id)`, `password_hash` is gone (Supabase Auth owns credentials), and a `handle_new_user` trigger creates the matching `public.users` row -- with the role from `supabase.auth.signUp`'s `options.data.role` -- the moment someone signs up. Local docker-compose Postgres has no real `auth` schema, so this migration also creates a minimal shim `auth.users` (guarded with `IF NOT EXISTS`, a no-op against a real Supabase project) purely so the schema/trigger/FK can exist locally; nothing writes to that shim automatically (no local GoTrue), so exercising real signup/login end-to-end requires pointing `DATABASE_URL`/`SUPABASE_URL` at the real Supabase project.
 - `src/middleware/index.ts` exports `requireAuth` (verifies the `Authorization: Bearer <Supabase access token>` header via `src/lib/supabase.ts`'s service-role client, then loads the `public.users` profile) and `requireRole(...roles)` -- apply both to any endpoint that should require login/a specific role. Only `GET /api/auth/me` uses them today; none of the existing read-model endpoints are gated yet.
+There are two migrations, applied in order:
+
+- **`001_init.sql`** — the original Fase 0 schema: the `postgis` extension, `user_role`/`report_status` enums, and skeletal `users`, `grid`, and `umkm_report` tables. This is the partner's auth/reporting foundation — don't repurpose or drop the `users` table here without checking with them first.
+- **`002_analytics_schema.sql`** — the real tables the app actually queries today (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `umkm_businesses`, `dashboard_summary`, plus the `spatial_grids_geojson` view), matching exactly what titiktemu-analytics' batch pipeline writes. These are a separate concern from `001`'s tables — no foreign keys between the two migrations' tables.
+
+Both are idempotent (`CREATE TABLE IF NOT EXISTS` / `CREATE OR REPLACE VIEW`) and safe to re-run.
+
+- **Local development**: `docker compose up -d` applies both migrations automatically, in filename order, against a fresh volume (see "Start the local database" above).
+- **Against a real Supabase project**: create the project in the Supabase dashboard, enable the PostGIS extension under `Database > Extensions`, then run both files against it in order — they're portable between environments:
+  ```bash
+  psql "$DATABASE_URL" -f supabase/migrations/001_init.sql
+  psql "$DATABASE_URL" -f supabase/migrations/002_analytics_schema.sql
+  ```
+- The `users` table is self-contained (its own UUID primary key, no foreign key to Supabase's `auth.users`) so the same migration works identically against local Docker Postgres and a real Supabase project. Revisit this if the team commits to Supabase Auth as the RBAC identity provider.
+- `002`'s tables are also created ad hoc by titiktemu-analytics' `ensure_schema()` (a local-dev convenience for that repo, not the source of truth) -- this migration is the actual source of truth for their shape; keep the two in sync if you change one.
 - Keep persistence logic in `src/repositories/` and database client setup in `src/db/`.
 - Document any new required variables and migration commands here as they're added.
 
