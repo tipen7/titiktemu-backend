@@ -33,7 +33,14 @@ const SNIPPETS: KnowledgeSnippet[] = [
       "Skor tinggi berarti lokasi tersebut relatif aman DAN ramai secara komersial.",
   },
   {
-    keywords: ["akurasi", "accuracy", "confidence", "keyakinan", "validasi", "model"],
+    keywords: [
+      "akurasi",
+      "accuracy",
+      "confidence",
+      "keyakinan",
+      "validasi",
+      "model",
+    ],
     text:
       "Angka akurasi model yang ditampilkan adalah hasil validasi silang (leave-one-out cross-validation) " +
       "terhadap data survei UMKM riil, bukan estimasi internal model. Tingkat keyakinan (confidence_level) " +
@@ -63,7 +70,15 @@ const SNIPPETS: KnowledgeSnippet[] = [
       "di suatu kawasan.",
   },
   {
-    keywords: ["cakupan", "region", "kawasan", "wilayah", "populasi", "sampel", "generalisasi"],
+    keywords: [
+      "cakupan",
+      "region",
+      "kawasan",
+      "wilayah",
+      "populasi",
+      "sampel",
+      "generalisasi",
+    ],
     text:
       "Model saat ini dilatih dari data survei UMKM riil di sejumlah kawasan sekitar TOD Jabodetabek -- " +
       "cakupannya bertambah seiring data survei baru masuk. Untuk kawasan yang belum memiliki data survei " +
@@ -74,7 +89,7 @@ const SNIPPETS: KnowledgeSnippet[] = [
 /** Returns the text of every snippet whose keyword list overlaps the message -- small corpus, no vector store needed. */
 export function retrieveKnowledge(message: string): string[] {
   const lower = message.toLowerCase();
-  return SNIPPETS.filter((snippet) => snippet.keywords.some((keyword) => lower.includes(keyword))).map(
-    (snippet) => snippet.text,
-  );
+  return SNIPPETS.filter((snippet) =>
+    snippet.keywords.some((keyword) => lower.includes(keyword)),
+  ).map((snippet) => snippet.text);
 }

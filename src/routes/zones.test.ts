@@ -34,16 +34,18 @@ describe("GET /api/zones/lookup", () => {
     expect(response.body.zone_color).toBe("red");
     expect(response.body.zone_label).toBe("bahaya");
     // Real value from analytics' dashboard_summary -- leave-one-out
-    // cross-validated against n=313 real, measured UMKM survey points
-    // across all 10 regions (see that repo's
+    // cross-validated against n=119 real, measured UMKM survey points
+    // (v3 + v5 only; v4 retired -- its revenue field was a disclosed
+    // mechanical proxy, not an independent measurement) with CV-selected
+    // GWR bandwidth (see that repo's
     // src/modeling/xgboost_ews.validate_ews_against_survey). NOT the old
-    // XGBoost/GWR surface-fit figure (~72-100%, near-100% by construction
+    // XGBoost/GWR surface-fit figure (~60-100%, near-100% by construction
     // and intentionally not exposed by this API) -- that number measured
     // curve-fitting fidelity, not real-world accuracy. This number moves
     // as analytics' survey data grows -- re-verify against a live query
     // before updating it again, don't just bump it to whatever a new run prints.
-    expect(response.body.model_accuracy.accuracy_pct).toBeCloseTo(35.1, 1);
-    expect(response.body.model_accuracy.n).toBe(313);
+    expect(response.body.model_accuracy.accuracy_pct).toBeCloseTo(64.7, 1);
+    expect(response.body.model_accuracy.n).toBe(119);
     expect(response.body.model_accuracy.confidence_level).toBe("high");
   });
 
@@ -107,10 +109,10 @@ describe("GET /api/model-accuracy", () => {
   it("returns the latest EWS model accuracy with the correct confidence level", async () => {
     const response = await supertest(app).get("/api/model-accuracy");
     expect(response.status).toBe(200);
-    expect(response.body.accuracy_pct).toBeCloseTo(35.1, 1);
-    expect(response.body.n).toBe(313);
-    expect(response.body.ci_95_low_pct).toBeCloseTo(30.1, 1);
-    expect(response.body.ci_95_high_pct).toBeCloseTo(40.6, 1);
+    expect(response.body.accuracy_pct).toBeCloseTo(64.7, 1);
+    expect(response.body.n).toBe(119);
+    expect(response.body.ci_95_low_pct).toBeCloseTo(55.8, 1);
+    expect(response.body.ci_95_high_pct).toBeCloseTo(72.7, 1);
     expect(response.body.confidence_level).toBe("high");
     expect(typeof response.body.computed_at).toBe("string");
   });

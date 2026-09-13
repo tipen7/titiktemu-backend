@@ -12,5 +12,7 @@ export type UmkmListQuery = z.infer<typeof umkmListQuerySchema>;
 export const umkmIdParamSchema = z.object({ id: z.string().min(1) });
 
 export const policyRecommendationsQuerySchema = z.object({
-  recommendation_type: z.enum(["mitigasi", "realokasi", "pemantauan"]).optional(),
+  recommendation_type: z
+    .enum(["mitigasi", "realokasi", "pemantauan"])
+    .optional(),
 });

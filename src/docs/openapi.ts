@@ -197,7 +197,10 @@ export const openApiDocument = {
                   type: "object",
                   properties: {
                     answer: { type: "string" },
-                    highlight_grid_ids: { type: "array", items: { type: "string" } },
+                    highlight_grid_ids: {
+                      type: "array",
+                      items: { type: "string" },
+                    },
                     in_scope: { type: "boolean" },
                   },
                 },

@@ -96,8 +96,14 @@ export async function readLatestEwsModelAccuracy(): Promise<{
 // --- AI Chatbot retrieval -- reads the same tables the rest of this
 // service already reads, no separate data path for the chatbot.
 
-export async function readDashboardSummary(): Promise<Record<string, unknown> | null> {
-  const { rows } = await getPool().query<{ metrics: Record<string, unknown>; computed_at: string }>(
+export async function readDashboardSummary(): Promise<Record<
+  string,
+  unknown
+> | null> {
+  const { rows } = await getPool().query<{
+    metrics: Record<string, unknown>;
+    computed_at: string;
+  }>(
     "SELECT metrics, computed_at FROM dashboard_summary ORDER BY computed_at DESC LIMIT 1",
   );
   if (!rows[0]) return null;
@@ -121,7 +127,9 @@ export interface DistrictSummary {
   avg_matching_score: number;
 }
 
-export async function readDistrictSummary(districtName: string): Promise<DistrictSummary | null> {
+export async function readDistrictSummary(
+  districtName: string,
+): Promise<DistrictSummary | null> {
   const { rows } = await getPool().query<DistrictSummary>(
     `SELECT
        g.district_name,
@@ -151,7 +159,9 @@ export interface GridDetail {
   recommendation_type: string | null;
 }
 
-export async function readGridDetail(gridId: string): Promise<GridDetail | null> {
+export async function readGridDetail(
+  gridId: string,
+): Promise<GridDetail | null> {
   const { rows } = await getPool().query<GridDetail>(
     `SELECT
        g.grid_id, g.district_name, g.kecamatan,
@@ -197,7 +207,9 @@ export interface UmkmListFilters {
   offset?: number;
 }
 
-export async function readUmkmList(filters: UmkmListFilters): Promise<{ rows: UmkmBusiness[]; total: number }> {
+export async function readUmkmList(
+  filters: UmkmListFilters,
+): Promise<{ rows: UmkmBusiness[]; total: number }> {
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -213,7 +225,8 @@ export async function readUmkmList(filters: UmkmListFilters): Promise<{ rows: Um
     params.push(filters.ewsCode);
     conditions.push(`r.ews_code = $${params.length}`);
   }
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const whereClause =
+    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const limit = filters.limit ?? 20;
   const offset = filters.offset ?? 0;

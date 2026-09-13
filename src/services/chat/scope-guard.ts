@@ -27,18 +27,65 @@ const INJECTION_PATTERNS: RegExp[] = [
 // zones, reallocation, tenant matching, ESG/UMKM tracking. A message with
 // none of these (and that isn't a plain greeting) is out of scope.
 const IN_SCOPE_KEYWORDS: string[] = [
-  "zona", "zone", "grid", "blok", "block",
-  "gentrifikasi", "gentrification", "risiko", "risk", "rawan", "kerentanan", "vulnerab",
-  "aman", "waspada", "bahaya", "ews",
-  "realokasi", "reallocation", "relokasi", "pindah",
-  "tenant", "penyewa", "matching", "kandidat", "candidate",
-  "umkm", "usaha", "bisnis", "business", "kios", "toko",
-  "esg", "kuota", "kepatuhan", "compliance",
-  "stasiun", "station", "tod", "mrt", "lrt", "krl",
-  "kawasan", "wilayah", "area", "lokasi", "location",
-  "alokasi", "allocation", "rekomendasi", "recommendation",
-  "dashboard", "laporan", "report", "peta", "map",
-  "titiktemu", "matching score", "confidence", "keyakinan",
+  "zona",
+  "zone",
+  "grid",
+  "blok",
+  "block",
+  "gentrifikasi",
+  "gentrification",
+  "risiko",
+  "risk",
+  "rawan",
+  "kerentanan",
+  "vulnerab",
+  "aman",
+  "waspada",
+  "bahaya",
+  "ews",
+  "realokasi",
+  "reallocation",
+  "relokasi",
+  "pindah",
+  "tenant",
+  "penyewa",
+  "matching",
+  "kandidat",
+  "candidate",
+  "umkm",
+  "usaha",
+  "bisnis",
+  "business",
+  "kios",
+  "toko",
+  "esg",
+  "kuota",
+  "kepatuhan",
+  "compliance",
+  "stasiun",
+  "station",
+  "tod",
+  "mrt",
+  "lrt",
+  "krl",
+  "kawasan",
+  "wilayah",
+  "area",
+  "lokasi",
+  "location",
+  "alokasi",
+  "allocation",
+  "rekomendasi",
+  "recommendation",
+  "dashboard",
+  "laporan",
+  "report",
+  "peta",
+  "map",
+  "titiktemu",
+  "matching score",
+  "confidence",
+  "keyakinan",
 ];
 
 const GREETING_PATTERNS: RegExp[] = [
@@ -66,7 +113,9 @@ export function checkScope(message: string): ScopeCheckResult {
     return { allowed: true };
   }
 
-  const hasInScopeKeyword = IN_SCOPE_KEYWORDS.some((keyword) => lower.includes(keyword));
+  const hasInScopeKeyword = IN_SCOPE_KEYWORDS.some((keyword) =>
+    lower.includes(keyword),
+  );
   if (!hasInScopeKeyword) {
     return { allowed: false, reason: "off_topic" };
   }
@@ -74,7 +123,10 @@ export function checkScope(message: string): ScopeCheckResult {
   return { allowed: true };
 }
 
-export const REFUSAL_MESSAGES: Record<"injection" | "off_topic" | "empty", string> = {
+export const REFUSAL_MESSAGES: Record<
+  "injection" | "off_topic" | "empty",
+  string
+> = {
   injection:
     "Maaf, saya tidak bisa memproses permintaan tersebut. Saya hanya dapat membantu pertanyaan seputar TitikTemu -- zona risiko, gentrifikasi, realokasi, tenant matching, dan ESG.",
   off_topic:

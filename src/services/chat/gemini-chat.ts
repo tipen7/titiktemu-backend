@@ -12,7 +12,8 @@
 
 import { appConfig } from "../../config/index.js";
 
-const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
+const GEMINI_ENDPOINT =
+  "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
 
 export type ChatRole = "operator" | "umkm";
 
@@ -34,7 +35,8 @@ const ROLE_FRAMING: Record<ChatRole, string> = {
     "Pengguna adalah OPERATOR (pengelola kawasan TOD) -- jawab dengan framing analitis: skor, " +
     "perbandingan antar blok/kawasan, dan implikasi kebijakan. Operator boleh melihat detail model " +
     "(indeks kerentanan, matching score, tingkat keyakinan).",
-  umkm: "Pengguna adalah pelaku UMKM -- jawab dengan bahasa sederhana dan personal: fokus pada status " +
+  umkm:
+    "Pengguna adalah pelaku UMKM -- jawab dengan bahasa sederhana dan personal: fokus pada status " +
     "risiko lokasi usaha mereka dan opsi realokasi jika relevan. Hindari jargon teknis model.",
 };
 
@@ -74,13 +76,19 @@ export async function callGeminiChat(
     };
   }
 
-  const systemPrompt = SYSTEM_PROMPT_TEMPLATE.replace("{role_framing}", ROLE_FRAMING[role]).replace(
+  const systemPrompt = SYSTEM_PROMPT_TEMPLATE.replace(
+    "{role_framing}",
+    ROLE_FRAMING[role],
+  ).replace(
     "{context}",
     context || "(tidak ada data spesifik yang cocok untuk pertanyaan ini)",
   );
 
   const conversation = history
-    .map((turn) => `${turn.role === "user" ? "Pengguna" : "Asisten"}: ${turn.text}`)
+    .map(
+      (turn) =>
+        `${turn.role === "user" ? "Pengguna" : "Asisten"}: ${turn.text}`,
+    )
     .join("\n");
 
   const prompt = `${systemPrompt}\n\n${conversation ? conversation + "\n" : ""}Pengguna: ${message}`;
@@ -101,9 +109,13 @@ export async function callGeminiChat(
   if (!response.ok) {
     const body = await response.text();
     if (response.status === 429) {
-      throw new GeminiQuotaExceededError(`Gemini API returned 429: ${body.slice(0, 200)}`);
+      throw new GeminiQuotaExceededError(
+        `Gemini API returned 429: ${body.slice(0, 200)}`,
+      );
     }
-    throw new Error(`Gemini API returned ${response.status}: ${body.slice(0, 200)}`);
+    throw new Error(
+      `Gemini API returned ${response.status}: ${body.slice(0, 200)}`,
+    );
   }
 
   const data = (await response.json()) as {
@@ -111,16 +123,23 @@ export async function callGeminiChat(
   };
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) {
-    throw new Error("Malformed Gemini response, refusing to persist it: no text in response");
+    throw new Error(
+      "Malformed Gemini response, refusing to persist it: no text in response",
+    );
   }
 
   let parsed: unknown;
   try {
     // Gemini sometimes wraps JSON in a ```json fence despite instructions not to.
-    const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/```$/, "");
+    const cleaned = text
+      .trim()
+      .replace(/^```json\s*/i, "")
+      .replace(/```$/, "");
     parsed = JSON.parse(cleaned);
   } catch (error) {
-    throw new Error(`Malformed Gemini response, refusing to persist it: ${(error as Error).message}`);
+    throw new Error(
+      `Malformed Gemini response, refusing to persist it: ${(error as Error).message}`,
+    );
   }
 
   if (
@@ -129,13 +148,21 @@ export async function callGeminiChat(
     !("in_scope" in parsed) ||
     !("answer" in parsed)
   ) {
-    throw new Error("Malformed Gemini response, refusing to persist it: missing required fields");
+    throw new Error(
+      "Malformed Gemini response, refusing to persist it: missing required fields",
+    );
   }
 
-  const result = parsed as { in_scope: boolean; answer: string; highlight_grid_ids?: string[] };
+  const result = parsed as {
+    in_scope: boolean;
+    answer: string;
+    highlight_grid_ids?: string[];
+  };
   return {
     in_scope: Boolean(result.in_scope),
     answer: String(result.answer),
-    highlight_grid_ids: Array.isArray(result.highlight_grid_ids) ? result.highlight_grid_ids.map(String) : [],
+    highlight_grid_ids: Array.isArray(result.highlight_grid_ids)
+      ? result.highlight_grid_ids.map(String)
+      : [],
   };
 }

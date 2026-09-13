@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import { getChatResponse } from "../services/chat/index.js";
 import {
   getDashboardSummary,
   getModelAccuracy,
@@ -10,14 +11,13 @@ import {
   getZoneAtLocation,
   getZonesGeoJson,
 } from "../services/index.js";
-import { getChatResponse } from "../services/chat/index.js";
-import { locationQuerySchema } from "../validators/zones.validators.js";
 import { chatRequestSchema } from "../validators/chat.validators.js";
 import {
   policyRecommendationsQuerySchema,
   umkmIdParamSchema,
   umkmListQuerySchema,
 } from "../validators/umkm.validators.js";
+import { locationQuerySchema } from "../validators/zones.validators.js";
 
 // Controllers translate HTTP requests into service calls and HTTP responses.
 export const healthController: RequestHandler = (_request, response) => {
@@ -121,7 +121,11 @@ export const reallocationController: RequestHandler = async (
 
 // Powers the Asisten AI TitikTemu chatbot -- both Operator and UMKM user
 // surfaces, scoped to this site's domain only (see services/chat/index.ts).
-export const chatController: RequestHandler = async (request, response, next) => {
+export const chatController: RequestHandler = async (
+  request,
+  response,
+  next,
+) => {
   try {
     const { message, role, history } = chatRequestSchema.parse(request.body);
     const result = await getChatResponse(message, role, history);
@@ -132,7 +136,11 @@ export const chatController: RequestHandler = async (request, response, next) =>
 };
 
 // Powers Discovery Map's favorites list and UMKM Self-Tracker's table.
-export const umkmListController: RequestHandler = async (request, response, next) => {
+export const umkmListController: RequestHandler = async (
+  request,
+  response,
+  next,
+) => {
   try {
     const query = umkmListQuerySchema.parse(request.query);
     const result = await getUmkmList({
@@ -148,7 +156,11 @@ export const umkmListController: RequestHandler = async (request, response, next
   }
 };
 
-export const umkmDetailController: RequestHandler = async (request, response, next) => {
+export const umkmDetailController: RequestHandler = async (
+  request,
+  response,
+  next,
+) => {
   try {
     const { id } = umkmIdParamSchema.parse(request.params);
     const business = await getUmkmById(id);
@@ -163,7 +175,11 @@ export const umkmDetailController: RequestHandler = async (request, response, ne
 };
 
 // Powers ESG Dashboard and the Operator beranda's "Panel Informasi".
-export const dashboardSummaryController: RequestHandler = async (_request, response, next) => {
+export const dashboardSummaryController: RequestHandler = async (
+  _request,
+  response,
+  next,
+) => {
   try {
     const summary = await getDashboardSummary();
     if (!summary) {
@@ -177,9 +193,15 @@ export const dashboardSummaryController: RequestHandler = async (_request, respo
 };
 
 // Powers Laporan Alokasi.
-export const policyRecommendationsController: RequestHandler = async (request, response, next) => {
+export const policyRecommendationsController: RequestHandler = async (
+  request,
+  response,
+  next,
+) => {
   try {
-    const { recommendation_type } = policyRecommendationsQuerySchema.parse(request.query);
+    const { recommendation_type } = policyRecommendationsQuerySchema.parse(
+      request.query,
+    );
     const recommendations = await getPolicyRecommendations(recommendation_type);
     response.json(recommendations);
   } catch (error) {

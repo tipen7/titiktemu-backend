@@ -5,12 +5,12 @@
 // numbers instead of the model guessing.
 
 import {
+  type DistrictSummary,
+  type GridDetail,
   readDashboardSummary,
   readDistrictSummary,
   readGridDetail,
   readKnownDistrictNames,
-  type DistrictSummary,
-  type GridDetail,
 } from "../../repositories/index.js";
 import { retrieveKnowledge } from "./knowledge-base.js";
 
@@ -24,7 +24,10 @@ export interface RetrievedContext {
 }
 
 /** Finds which of the real, known district names (if any) the message mentions -- case-insensitive substring match, not fuzzy, since district names are short and few. */
-function findMentionedDistricts(message: string, knownDistricts: string[]): string[] {
+function findMentionedDistricts(
+  message: string,
+  knownDistricts: string[],
+): string[] {
   const lower = message.toLowerCase();
   return knownDistricts.filter((name) => lower.includes(name.toLowerCase()));
 }
@@ -35,8 +38,10 @@ export async function buildContext(message: string): Promise<RetrievedContext> {
 
   const gridId = message.match(GRID_ID_PATTERN)?.[1];
   const [districtSummaries, gridDetail, dashboardSummary] = await Promise.all([
-    Promise.all(mentionedDistricts.map((name) => readDistrictSummary(name))).then(
-      (results) => results.filter((r): r is DistrictSummary => r !== null),
+    Promise.all(
+      mentionedDistricts.map((name) => readDistrictSummary(name)),
+    ).then((results) =>
+      results.filter((r): r is DistrictSummary => r !== null),
     ),
     gridId ? readGridDetail(gridId) : Promise.resolve(null),
     // Always include the latest dashboard summary -- cheap, and general
@@ -93,7 +98,10 @@ export function formatContext(context: RetrievedContext): string {
   }
 
   if (context.knowledgeSnippets.length > 0) {
-    parts.push("Catatan metodologi relevan:\n" + context.knowledgeSnippets.map((s) => `- ${s}`).join("\n"));
+    parts.push(
+      "Catatan metodologi relevan:\n" +
+        context.knowledgeSnippets.map((s) => `- ${s}`).join("\n"),
+    );
   }
 
   return parts.join("\n\n");

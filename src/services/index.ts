@@ -137,11 +137,16 @@ export async function getReallocationForLocation(
 
 function attachZoneLabel<T extends { ews_code: number | null }>(
   row: T,
-): T & { zone_color: (typeof EWS_TO_COLOR)[number] | null; zone_label: (typeof EWS_TO_LABEL)[number] | null } {
+): T & {
+  zone_color: (typeof EWS_TO_COLOR)[number] | null;
+  zone_label: (typeof EWS_TO_LABEL)[number] | null;
+} {
   return {
     ...row,
-    zone_color: row.ews_code !== null ? (EWS_TO_COLOR[row.ews_code] ?? null) : null,
-    zone_label: row.ews_code !== null ? (EWS_TO_LABEL[row.ews_code] ?? null) : null,
+    zone_color:
+      row.ews_code !== null ? (EWS_TO_COLOR[row.ews_code] ?? null) : null,
+    zone_label:
+      row.ews_code !== null ? (EWS_TO_LABEL[row.ews_code] ?? null) : null,
   };
 }
 

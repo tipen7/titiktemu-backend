@@ -2,9 +2,14 @@
 // LLM-level scope re-check. See DESIGN.md's chatbot requirement (Asisten
 // AI TitikTemu, both Operator and UMKM user, scoped to this site only).
 
-import { checkScope, REFUSAL_MESSAGES } from "./scope-guard.js";
+import {
+  type ChatRole,
+  type ChatTurn,
+  callGeminiChat,
+  GeminiQuotaExceededError,
+} from "./gemini-chat.js";
 import { buildContext, formatContext } from "./retrieval.js";
-import { callGeminiChat, GeminiQuotaExceededError, type ChatRole, type ChatTurn } from "./gemini-chat.js";
+import { checkScope, REFUSAL_MESSAGES } from "./scope-guard.js";
 
 export type { ChatRole, ChatTurn } from "./gemini-chat.js";
 
@@ -21,7 +26,11 @@ export async function getChatResponse(
 ): Promise<ChatResponse> {
   const scopeCheck = checkScope(message);
   if (!scopeCheck.allowed) {
-    return { answer: REFUSAL_MESSAGES[scopeCheck.reason], highlight_grid_ids: [], in_scope: false };
+    return {
+      answer: REFUSAL_MESSAGES[scopeCheck.reason],
+      highlight_grid_ids: [],
+      in_scope: false,
+    };
   }
 
   const context = await buildContext(message);
@@ -33,7 +42,8 @@ export async function getChatResponse(
   } catch (error) {
     if (error instanceof GeminiQuotaExceededError) {
       return {
-        answer: "Asisten AI sedang tidak tersedia (kuota API tercapai). Silakan coba lagi nanti.",
+        answer:
+          "Asisten AI sedang tidak tersedia (kuota API tercapai). Silakan coba lagi nanti.",
         highlight_grid_ids: [],
         in_scope: true,
       };
@@ -46,8 +56,16 @@ export async function getChatResponse(
   // show the fixed refusal copy rather than whatever free-text it
   // returned -- the model's own refusal wording isn't guaranteed safe.
   if (!result.in_scope) {
-    return { answer: REFUSAL_MESSAGES.off_topic, highlight_grid_ids: [], in_scope: false };
+    return {
+      answer: REFUSAL_MESSAGES.off_topic,
+      highlight_grid_ids: [],
+      in_scope: false,
+    };
   }
 
-  return { answer: result.answer, highlight_grid_ids: result.highlight_grid_ids, in_scope: true };
+  return {
+    answer: result.answer,
+    highlight_grid_ids: result.highlight_grid_ids,
+    in_scope: true,
+  };
 }

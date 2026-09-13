@@ -15,7 +15,9 @@ describe("GET /api/umkm", () => {
   });
 
   it("filters by district", async () => {
-    const response = await supertest(app).get("/api/umkm").query({ district: "Dukuh Atas" });
+    const response = await supertest(app)
+      .get("/api/umkm")
+      .query({ district: "Dukuh Atas" });
     expect(response.status).toBe(200);
     for (const row of response.body.rows) {
       expect(row.district_name).toBe("Dukuh Atas");
@@ -23,7 +25,9 @@ describe("GET /api/umkm", () => {
   });
 
   it("returns 400 for an out-of-range ews_code", async () => {
-    const response = await supertest(app).get("/api/umkm").query({ ews_code: 5 });
+    const response = await supertest(app)
+      .get("/api/umkm")
+      .query({ ews_code: 5 });
     expect(response.status).toBe(400);
   });
 });
