@@ -4,7 +4,7 @@ import { appConfig } from "../config/index.js";
 // Database clients and connection setup belong in this module.
 let pool: Pool | undefined;
 
-function getPool(): Pool {
+export function getPool(): Pool {
   pool ??= new Pool({ connectionString: appConfig.databaseUrl });
   return pool;
 }

@@ -51,7 +51,7 @@ Set values appropriate for your local environment. Do not commit `.env`, Supabas
 | `SUPABASE_URL` | Supabase project URL | Not yet used by any endpoint |
 | `SUPABASE_ANON_KEY` | Supabase public/anonymous API key | Not yet used by any endpoint |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase server-side key | Not yet used by any endpoint; keep private |
-| `DATABASE_URL` | PostgreSQL connection string. Used by `GET /api/status` to report DB connectivity | Yes, for `/api/status` to report `database: "ok"` |
+| `DATABASE_URL` | PostgreSQL connection string. Used by `GET /api/status` to report DB connectivity, and by `/api/zones`, `/api/zones/lookup`, `/api/reallocation` to read titiktemu-analytics' output tables | Yes |
 | `CORS_ORIGIN` | Comma-separated allowed browser origins | No. Defaults to `http://localhost:3000`. |
 
 The values in `.env.example` are placeholders. Replace them before enabling database or Supabase-backed features.
@@ -112,6 +112,14 @@ pnpm start
 | --- | --- | --- | --- |
 | `GET` | `/api/health` | Liveness check | `{"status":"ok"}` |
 | `GET` | `/api/status` | Liveness + DB connectivity (Controller → Service → Repository → DB) | `{"status":"ok"\|"degraded","database":"ok"\|"error"}` (503 if degraded) |
+| `GET` | `/api/zones` | All scored grid cells as GeoJSON (Discovery Map base layer) | GeoJSON `FeatureCollection` |
+| `GET` | `/api/zones/lookup?lat=&lng=` | Zone detail for one location (UMKM Self Discovery Tracker) | Zone detail, or 404 outside the study area |
+| `GET` | `/api/reallocation?lat=&lng=` | Reallocation candidates for one location (Smart Tenant Matching Engine's "View Reallocation") | `{found, eligible, zone, candidates, message?}` |
+| `GET` | `/api/model-accuracy` | Latest EWS/matching_score model accuracy -- one figure per batch run, not per cell | `{accuracy_pct, confidence_level, computed_at}`, or 404 if analytics hasn't run yet |
+
+`ZoneDetail` (returned by `/api/zones/lookup` and nested in `/api/reallocation`) carries `model_accuracy` too, so a zone's own detail view can show the confidence badge without a second request.
+
+The three zone/reallocation endpoints read tables written by **titiktemu-analytics**' batch pipeline (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `spatial_grids_geojson`) via plain SQL against `DATABASE_URL` -- see `src/repositories/index.ts`. They return empty/`eligible: false` if that pipeline hasn't run yet, or if a location falls in a "waspada" (medium-risk) zone, since the analytics pipeline only precomputes reallocation candidates for "bahaya" (high-risk) zones today.
 
 The server listens on `PORT` (default `4000`) via `src/config/index.ts`.
 
