@@ -17,7 +17,12 @@ export const app: Express = express();
 
 app.use(helmet());
 app.use(cors({ origin: appConfig.corsOrigin }));
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 100 }));
+// A single page view fires ~5 GET requests (zones, dashboard-summary,
+// model-accuracy, umkm, policy-recommendations), and dashboard usage means
+// frequent reloads/navigation -- 100 req/15min was exhausted by normal
+// interactive use, not just abuse. 1000/15min still meaningfully throttles
+// scripted abuse without 429-ing a real user browsing the app.
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 1000 }));
 app.use(express.json());
 app.use(requestLogger);
 
