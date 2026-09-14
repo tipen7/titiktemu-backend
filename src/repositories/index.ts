@@ -349,3 +349,247 @@ export async function readReallocationCandidates(
   );
   return rows;
 }
+
+// --- UMKM self-report submissions (supabase/migrations/005_umkm_self_reports.sql)
+// -- a UMKM user's own survey data, held here for an analyst to later fold
+// into titiktemu-analytics' real survey CSV. Not read by this app's own
+// map/dashboard endpoints -- purely a submission + operator-review resource.
+
+export interface UmkmSelfReport {
+  id: string;
+  submitted_by: string | null;
+  business_name: string;
+  description: string | null;
+  tenant_type: string | null;
+  latitude: number;
+  longitude: number;
+  tenant_area_m2: number | null;
+  target_market: string | null;
+  rent_price_amount: number | null;
+  rent_period_unit: string | null;
+  rent_expiry_date: string | null;
+  revenue_per_month_idr: number | null;
+  txn_high_idr: number | null;
+  txn_normal_idr: number | null;
+  txn_low_idr: number | null;
+  transaction_per_buyer_idr: number | null;
+  rent_trend_pct: number | null;
+  status: "pending" | "reviewed" | "exported";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateUmkmSelfReportInput {
+  submittedBy: string | null;
+  businessName: string;
+  latitude: number;
+  longitude: number;
+  description?: string;
+  tenantType?: string;
+  tenantAreaM2?: number;
+  targetMarket?: string;
+  rentPriceAmount?: number;
+  rentPeriodUnit?: string;
+  rentExpiryDate?: string;
+  revenuePerMonthIdr?: number;
+  txnHighIdr?: number;
+  txnNormalIdr?: number;
+  txnLowIdr?: number;
+  transactionPerBuyerIdr?: number;
+  rentTrendPct?: number;
+}
+
+const UMKM_SELF_REPORT_RETURNING = `
+  id, submitted_by, business_name, description, tenant_type,
+  latitude::float8 AS latitude, longitude::float8 AS longitude,
+  tenant_area_m2::float8 AS tenant_area_m2, target_market,
+  rent_price_amount::float8 AS rent_price_amount, rent_period_unit, rent_expiry_date,
+  revenue_per_month_idr::float8 AS revenue_per_month_idr,
+  txn_high_idr::float8 AS txn_high_idr, txn_normal_idr::float8 AS txn_normal_idr,
+  txn_low_idr::float8 AS txn_low_idr,
+  transaction_per_buyer_idr::float8 AS transaction_per_buyer_idr,
+  rent_trend_pct::float8 AS rent_trend_pct, status, created_at, updated_at`;
+
+export async function insertUmkmSelfReport(
+  input: CreateUmkmSelfReportInput,
+): Promise<UmkmSelfReport> {
+  const { rows } = await getPool().query<UmkmSelfReport>(
+    `INSERT INTO umkm_self_reports (
+       submitted_by, business_name, description, tenant_type, latitude, longitude,
+       tenant_area_m2, target_market, rent_price_amount, rent_period_unit, rent_expiry_date,
+       revenue_per_month_idr, txn_high_idr, txn_normal_idr, txn_low_idr,
+       transaction_per_buyer_idr, rent_trend_pct
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+     RETURNING ${UMKM_SELF_REPORT_RETURNING}`,
+    [
+      input.submittedBy,
+      input.businessName,
+      input.description ?? null,
+      input.tenantType ?? null,
+      input.latitude,
+      input.longitude,
+      input.tenantAreaM2 ?? null,
+      input.targetMarket ?? null,
+      input.rentPriceAmount ?? null,
+      input.rentPeriodUnit ?? null,
+      input.rentExpiryDate ?? null,
+      input.revenuePerMonthIdr ?? null,
+      input.txnHighIdr ?? null,
+      input.txnNormalIdr ?? null,
+      input.txnLowIdr ?? null,
+      input.transactionPerBuyerIdr ?? null,
+      input.rentTrendPct ?? null,
+    ],
+  );
+  const row = rows[0];
+  if (!row) throw new Error("Failed to insert umkm_self_reports row");
+  return row;
+}
+
+export interface UmkmSelfReportListFilters {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function readUmkmSelfReports(
+  filters: UmkmSelfReportListFilters,
+): Promise<{ rows: UmkmSelfReport[]; total: number }> {
+  const params: unknown[] = [];
+  let whereClause = "";
+  if (filters.status) {
+    params.push(filters.status);
+    whereClause = `WHERE status = $${params.length}`;
+  }
+
+  const limit = filters.limit ?? 20;
+  const offset = filters.offset ?? 0;
+
+  const { rows: countRows } = await getPool().query<{ count: string }>(
+    `SELECT count(*) FROM umkm_self_reports ${whereClause}`,
+    params,
+  );
+
+  const { rows } = await getPool().query<UmkmSelfReport>(
+    `SELECT ${UMKM_SELF_REPORT_RETURNING}
+     FROM umkm_self_reports
+     ${whereClause}
+     ORDER BY created_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset],
+  );
+
+  return { rows, total: Number(countRows[0]?.count ?? 0) };
+}
+
+// --- Reallocation requests (supabase/migrations/006_reallocation_requests.sql)
+// -- a UMKM user's request to relocate to one specific reallocation
+// candidate; surfaced for operator approval/rejection. Deliberately a
+// separate resource/name from "Laporan Alokasi" (policy_recommendations
+// above), which is a read-only AI-narrative feature unrelated to this one.
+
+export interface ReallocationRequest {
+  id: string;
+  submitted_by: string | null;
+  origin_grid_id: string;
+  requested_grid_id: string;
+  requested_district: string | null;
+  distance_m: number | null;
+  matching_score: number | null;
+  note: string | null;
+  status: "pending" | "approved" | "rejected";
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateReallocationRequestInput {
+  submittedBy: string | null;
+  originGridId: string;
+  requestedGridId: string;
+  requestedDistrict?: string;
+  distanceM?: number;
+  matchingScore?: number;
+  note?: string;
+}
+
+const REALLOCATION_REQUEST_RETURNING = `
+  id, submitted_by, origin_grid_id, requested_grid_id, requested_district,
+  distance_m::float8 AS distance_m, matching_score::float8 AS matching_score,
+  note, status, reviewed_by, reviewed_at, created_at, updated_at`;
+
+export async function insertReallocationRequest(
+  input: CreateReallocationRequestInput,
+): Promise<ReallocationRequest> {
+  const { rows } = await getPool().query<ReallocationRequest>(
+    `INSERT INTO reallocation_requests (
+       submitted_by, origin_grid_id, requested_grid_id, requested_district,
+       distance_m, matching_score, note
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+     RETURNING ${REALLOCATION_REQUEST_RETURNING}`,
+    [
+      input.submittedBy,
+      input.originGridId,
+      input.requestedGridId,
+      input.requestedDistrict ?? null,
+      input.distanceM ?? null,
+      input.matchingScore ?? null,
+      input.note ?? null,
+    ],
+  );
+  const row = rows[0];
+  if (!row) throw new Error("Failed to insert reallocation_requests row");
+  return row;
+}
+
+export interface ReallocationRequestListFilters {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function readReallocationRequests(
+  filters: ReallocationRequestListFilters,
+): Promise<{ rows: ReallocationRequest[]; total: number }> {
+  const params: unknown[] = [];
+  let whereClause = "";
+  if (filters.status) {
+    params.push(filters.status);
+    whereClause = `WHERE status = $${params.length}`;
+  }
+
+  const limit = filters.limit ?? 20;
+  const offset = filters.offset ?? 0;
+
+  const { rows: countRows } = await getPool().query<{ count: string }>(
+    `SELECT count(*) FROM reallocation_requests ${whereClause}`,
+    params,
+  );
+
+  const { rows } = await getPool().query<ReallocationRequest>(
+    `SELECT ${REALLOCATION_REQUEST_RETURNING}
+     FROM reallocation_requests
+     ${whereClause}
+     ORDER BY created_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset],
+  );
+
+  return { rows, total: Number(countRows[0]?.count ?? 0) };
+}
+
+export async function updateReallocationRequestStatus(
+  id: string,
+  status: "approved" | "rejected",
+  reviewedBy: string | null,
+): Promise<ReallocationRequest | null> {
+  const { rows } = await getPool().query<ReallocationRequest>(
+    `UPDATE reallocation_requests
+     SET status = $2, reviewed_by = $3, reviewed_at = now(), updated_at = now()
+     WHERE id = $1
+     RETURNING ${REALLOCATION_REQUEST_RETURNING}`,
+    [id, status, reviewedBy],
+  );
+  return rows[0] ?? null;
+}

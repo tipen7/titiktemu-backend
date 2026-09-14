@@ -1,22 +1,37 @@
 import type { RequestHandler } from "express";
 import { getChatResponse } from "../services/chat/index.js";
 import {
+  decideReallocationRequest,
   getDashboardSummary,
   getModelAccuracy,
   getPolicyRecommendations,
   getReallocationForLocation,
+  getReallocationRequests,
   getServiceStatus,
   getUmkmById,
   getUmkmList,
+  getUmkmSelfReports,
   getZoneAtLocation,
   getZonesGeoJson,
+  submitReallocationRequest,
+  submitUmkmSelfReport,
 } from "../services/index.js";
 import { chatRequestSchema } from "../validators/chat.validators.js";
+import {
+  createReallocationRequestSchema,
+  reallocationRequestIdParamSchema,
+  reallocationRequestListQuerySchema,
+  updateReallocationRequestStatusSchema,
+} from "../validators/reallocation-requests.validators.js";
 import {
   policyRecommendationsQuerySchema,
   umkmIdParamSchema,
   umkmListQuerySchema,
 } from "../validators/umkm.validators.js";
+import {
+  createUmkmSelfReportSchema,
+  umkmSelfReportListQuerySchema,
+} from "../validators/umkm-self-reports.validators.js";
 import { locationQuerySchema } from "../validators/zones.validators.js";
 
 // Controllers translate HTTP requests into service calls and HTTP responses.
@@ -210,6 +225,154 @@ export const policyRecommendationsController: RequestHandler = async (
     );
     const recommendations = await getPolicyRecommendations(recommendation_type);
     response.json(recommendations);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --- UMKM self-report submissions ---
+
+// A UMKM user submits their own business survey data (rent, revenue,
+// tenant info) for a future titiktemu-analytics batch survey import.
+// requireAuth + requireRole("umkm") (see routes) guarantee request.user.
+export const createUmkmSelfReportController: RequestHandler = async (
+  request,
+  response,
+  next,
+) => {
+  try {
+    const body = createUmkmSelfReportSchema.parse(request.body);
+    const report = await submitUmkmSelfReport({
+      submittedBy: request.user?.id ?? null,
+      businessName: body.business_name,
+      latitude: body.latitude,
+      longitude: body.longitude,
+      ...(body.description !== undefined && { description: body.description }),
+      ...(body.tenant_type !== undefined && { tenantType: body.tenant_type }),
+      ...(body.tenant_area_m2 !== undefined && {
+        tenantAreaM2: body.tenant_area_m2,
+      }),
+      ...(body.target_market !== undefined && {
+        targetMarket: body.target_market,
+      }),
+      ...(body.rent_price_amount !== undefined && {
+        rentPriceAmount: body.rent_price_amount,
+      }),
+      ...(body.rent_period_unit !== undefined && {
+        rentPeriodUnit: body.rent_period_unit,
+      }),
+      ...(body.rent_expiry_date !== undefined && {
+        rentExpiryDate: body.rent_expiry_date,
+      }),
+      ...(body.revenue_per_month_idr !== undefined && {
+        revenuePerMonthIdr: body.revenue_per_month_idr,
+      }),
+      ...(body.txn_high_idr !== undefined && { txnHighIdr: body.txn_high_idr }),
+      ...(body.txn_normal_idr !== undefined && {
+        txnNormalIdr: body.txn_normal_idr,
+      }),
+      ...(body.txn_low_idr !== undefined && { txnLowIdr: body.txn_low_idr }),
+      ...(body.transaction_per_buyer_idr !== undefined && {
+        transactionPerBuyerIdr: body.transaction_per_buyer_idr,
+      }),
+      ...(body.rent_trend_pct !== undefined && {
+        rentTrendPct: body.rent_trend_pct,
+      }),
+    });
+    response.status(201).json(report);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Powers an operator review screen for pending self-reports.
+export const listUmkmSelfReportsController: RequestHandler = async (
+  request,
+  response,
+  next,
+) => {
+  try {
+    const query = umkmSelfReportListQuerySchema.parse(request.query);
+    const result = await getUmkmSelfReports({
+      ...(query.status !== undefined && { status: query.status }),
+      ...(query.limit !== undefined && { limit: query.limit }),
+      ...(query.offset !== undefined && { offset: query.offset }),
+    });
+    response.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --- Reallocation requests ("Pengajuan Realokasi") ---
+
+// A UMKM user picks one reallocation candidate (from GET /api/reallocation)
+// and requests relocating there; surfaced for operator review below.
+export const createReallocationRequestController: RequestHandler = async (
+  request,
+  response,
+  next,
+) => {
+  try {
+    const body = createReallocationRequestSchema.parse(request.body);
+    const created = await submitReallocationRequest({
+      submittedBy: request.user?.id ?? null,
+      originGridId: body.origin_grid_id,
+      requestedGridId: body.requested_grid_id,
+      ...(body.requested_district !== undefined && {
+        requestedDistrict: body.requested_district,
+      }),
+      ...(body.distance_m !== undefined && { distanceM: body.distance_m }),
+      ...(body.matching_score !== undefined && {
+        matchingScore: body.matching_score,
+      }),
+      ...(body.note !== undefined && { note: body.note }),
+    });
+    response.status(201).json(created);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const listReallocationRequestsController: RequestHandler = async (
+  request,
+  response,
+  next,
+) => {
+  try {
+    const query = reallocationRequestListQuerySchema.parse(request.query);
+    const result = await getReallocationRequests({
+      ...(query.status !== undefined && { status: query.status }),
+      ...(query.limit !== undefined && { limit: query.limit }),
+      ...(query.offset !== undefined && { offset: query.offset }),
+    });
+    response.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Operator approves/rejects a pending reallocation request.
+export const decideReallocationRequestController: RequestHandler = async (
+  request,
+  response,
+  next,
+) => {
+  try {
+    const { id } = reallocationRequestIdParamSchema.parse(request.params);
+    const { status } = updateReallocationRequestStatusSchema.parse(
+      request.body,
+    );
+    const updated = await decideReallocationRequest(
+      id,
+      status,
+      request.user?.id ?? null,
+    );
+    if (!updated) {
+      response.status(404).json({ error: "Reallocation request not found" });
+      return;
+    }
+    response.json(updated);
   } catch (error) {
     next(error);
   }

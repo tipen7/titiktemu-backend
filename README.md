@@ -133,6 +133,11 @@ pnpm start
 | `GET` | `/api/umkm/:id` | Single UMKM business detail | UMKM business detail, or 404 |
 | `GET` | `/api/dashboard-summary` | Latest ESG dashboard / Operator beranda summary | Dashboard summary object, or 404 if analytics hasn't run yet |
 | `GET` | `/api/policy-recommendations` | Policy narratives for Laporan Alokasi, optionally filtered by type | Array of policy recommendations |
+| `POST` | `/api/umkm-self-reports` | UMKM user submits their own survey data (rent, revenue, tenant info) for a future analytics batch import. Requires role `umkm`. | Created self-report, 201 |
+| `GET` | `/api/umkm-self-reports?status=&limit=&offset=` | Operator review list of submitted self-reports. Requires role `operator_tod`/`pemda_admin`. | `{rows, total}` |
+| `POST` | `/api/reallocation-requests` | UMKM user requests relocating to one candidate grid from `/api/reallocation` ("Pengajuan Realokasi" -- distinct from the read-only Laporan Alokasi above). Requires role `umkm`. | Created request, 201 |
+| `GET` | `/api/reallocation-requests?status=&limit=&offset=` | Operator review list of reallocation requests. Requires role `operator_tod`/`pemda_admin`. | `{rows, total}` |
+| `PATCH` | `/api/reallocation-requests/:id` | Operator approves/rejects a pending reallocation request. Requires role `operator_tod`/`pemda_admin`. | Updated request, or 404 |
 | `GET` | `/api/auth/me` | Current authenticated user's profile (requires `Authorization: Bearer <Supabase access token>`) | `{id, email, role, fullName}`, or 401 |
 
 `ZoneDetail` (returned by `/api/zones/lookup` and nested in `/api/reallocation`) carries `model_accuracy` too, so a zone's own detail view can show the confidence badge without a second request.
@@ -269,6 +274,8 @@ There are three files under `supabase/migrations/`, applied in order:
 - **`001_init.sql`** — the original Fase 0 schema: the `postgis` extension, `user_role`/`report_status` enums, and skeletal `users`, `grid`, and `umkm_report` tables. This is the partner's auth/reporting foundation — don't repurpose or drop the `users` table here without checking with them first.
 - **`002_analytics_schema.sql`** — the real tables the app actually queries today (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `umkm_businesses`, `dashboard_summary`, plus the `spatial_grids_geojson` view), matching exactly what titiktemu-analytics' batch pipeline writes. These are a separate concern from `001`'s tables — no foreign keys between the two migrations' tables.
 - **`003_seed_real_data.sql`** — real data, not schema: a full snapshot of a genuine titiktemu-analytics pipeline run (v3+v5 real UMKM survey data, 64.7% real/LOOCV-validated model accuracy, n=119) for every table `002` creates. This is what makes a freshly-provisioned database (yours, a teammate's, or a new Supabase project) immediately usable for frontend/backend development and demos without waiting ~30-60 minutes for a real pipeline run. **One-time seed for a fresh, empty database** — re-running it against an already-seeded one fails on duplicate primary keys (expected; a real pipeline run, not this file, is how the data refreshes going forward).
+- **`004_auth_profiles.sql`** — wires `users` to Supabase Auth (see below).
+- **`005_umkm_self_reports.sql`** / **`006_reallocation_requests.sql`** — two net-new, standalone write-path tables backing `/api/umkm-self-reports` and `/api/reallocation-requests` (see "Current API" above). Neither reuses or touches `001`'s dead `umkm_report` table or `002`'s analytics tables (beyond `006`'s `spatial_grids(grid_id)` FK, following the same convention `002` itself uses). Both are idempotent (`CREATE TABLE IF NOT EXISTS`) and safe to re-run.
 
 `001` and `002` are idempotent (`CREATE TABLE IF NOT EXISTS` / `CREATE OR REPLACE VIEW`) and safe to re-run; `003` is not (see above).
 

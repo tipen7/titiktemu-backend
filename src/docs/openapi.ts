@@ -7,7 +7,7 @@ export const openApiDocument = {
     title: "TitikTemu Backend API",
     version: "1.0.0",
     description:
-      "API Gateway & Auth service for TitikTemu. Includes liveness/status; zones/reallocation/model-accuracy/umkm/dashboard-summary/policy-recommendations (reading titiktemu-analytics' precomputed output tables); and the Asisten AI TitikTemu chatbot (Gemini).",
+      "API Gateway & Auth service for TitikTemu. Includes liveness/status; zones/reallocation/model-accuracy/umkm/dashboard-summary/policy-recommendations (reading titiktemu-analytics' precomputed output tables); umkm-self-reports and reallocation-requests (UMKM-submitted, operator-reviewed write paths); and the Asisten AI TitikTemu chatbot (Gemini).",
   },
   servers: [{ url: "/api" }],
   paths: {
@@ -211,6 +211,196 @@ export const openApiDocument = {
         },
       },
     },
+    "/umkm-self-reports": {
+      post: {
+        summary: "Submit a UMKM self-report survey",
+        description:
+          "A UMKM user submits their own business data (rent, revenue, tenant info) for a future titiktemu-analytics survey import. Requires role 'umkm'.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateUmkmSelfReportBody" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "Created self-report",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UmkmSelfReport" },
+              },
+            },
+          },
+          "400": { description: "Validation failed" },
+          "401": { description: "Missing, invalid, or expired token" },
+          "403": { description: "Caller is not role 'umkm'" },
+        },
+      },
+      get: {
+        summary: "List UMKM self-reports for operator review",
+        description:
+          "Paginated/filterable list of submitted self-reports. Requires role 'operator_tod' or 'pemda_admin'.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["pending", "reviewed", "exported"],
+            },
+          },
+          { name: "limit", in: "query", schema: { type: "integer" } },
+          { name: "offset", in: "query", schema: { type: "integer" } },
+        ],
+        responses: {
+          "200": {
+            description: "Self-reports",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    rows: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/UmkmSelfReport" },
+                    },
+                    total: { type: "integer" },
+                  },
+                },
+              },
+            },
+          },
+          "401": { description: "Missing, invalid, or expired token" },
+          "403": {
+            description: "Caller is not role 'operator_tod'/'pemda_admin'",
+          },
+        },
+      },
+    },
+    "/reallocation-requests": {
+      post: {
+        summary: "Submit a reallocation request ('Pengajuan Realokasi')",
+        description:
+          "A UMKM user requests relocating to one specific reallocation candidate grid (from GET /api/reallocation). Requires role 'umkm'. Distinct from the read-only 'Laporan Alokasi' feature (/api/policy-recommendations).",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/CreateReallocationRequestBody",
+              },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "Created reallocation request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ReallocationRequest" },
+              },
+            },
+          },
+          "400": { description: "Validation failed" },
+          "401": { description: "Missing, invalid, or expired token" },
+          "403": { description: "Caller is not role 'umkm'" },
+        },
+      },
+      get: {
+        summary: "List reallocation requests for operator review",
+        description:
+          "Paginated/filterable list of submitted reallocation requests. Requires role 'operator_tod' or 'pemda_admin'.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["pending", "approved", "rejected"],
+            },
+          },
+          { name: "limit", in: "query", schema: { type: "integer" } },
+          { name: "offset", in: "query", schema: { type: "integer" } },
+        ],
+        responses: {
+          "200": {
+            description: "Reallocation requests",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    rows: {
+                      type: "array",
+                      items: {
+                        $ref: "#/components/schemas/ReallocationRequest",
+                      },
+                    },
+                    total: { type: "integer" },
+                  },
+                },
+              },
+            },
+          },
+          "401": { description: "Missing, invalid, or expired token" },
+          "403": {
+            description: "Caller is not role 'operator_tod'/'pemda_admin'",
+          },
+        },
+      },
+    },
+    "/reallocation-requests/{id}": {
+      patch: {
+        summary: "Approve or reject a reallocation request",
+        description:
+          "Operator decision on a pending reallocation request. Requires role 'operator_tod' or 'pemda_admin'.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["status"],
+                properties: {
+                  status: { type: "string", enum: ["approved", "rejected"] },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Updated reallocation request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ReallocationRequest" },
+              },
+            },
+          },
+          "400": { description: "Validation failed" },
+          "401": { description: "Missing, invalid, or expired token" },
+          "403": {
+            description: "Caller is not role 'operator_tod'/'pemda_admin'",
+          },
+          "404": { description: "Reallocation request not found" },
+        },
+      },
+    },
     "/auth/me": {
       get: {
         summary: "Current authenticated user's profile",
@@ -320,6 +510,95 @@ export const openApiDocument = {
           zone: { $ref: "#/components/schemas/ZoneDetail" },
           candidates: { type: "array", items: { type: "object" } },
           message: { type: "string" },
+        },
+      },
+      CreateUmkmSelfReportBody: {
+        type: "object",
+        required: ["business_name", "latitude", "longitude"],
+        properties: {
+          business_name: { type: "string" },
+          latitude: { type: "number" },
+          longitude: { type: "number" },
+          description: { type: "string" },
+          tenant_type: {
+            type: "string",
+            enum: [
+              "umkm_tetap",
+              "umkm_seasonal",
+              "franchise_tetap",
+              "franchise_seasonal",
+            ],
+          },
+          tenant_area_m2: { type: "number" },
+          target_market: { type: "string" },
+          rent_price_amount: { type: "number" },
+          rent_period_unit: {
+            type: "string",
+            enum: ["hari", "bulan", "tahun"],
+          },
+          rent_expiry_date: { type: "string", format: "date" },
+          revenue_per_month_idr: { type: "number" },
+          txn_high_idr: { type: "number" },
+          txn_normal_idr: { type: "number" },
+          txn_low_idr: { type: "number" },
+          transaction_per_buyer_idr: { type: "number" },
+          rent_trend_pct: { type: "number" },
+        },
+      },
+      UmkmSelfReport: {
+        type: "object",
+        properties: {
+          id: { type: "string", format: "uuid" },
+          submitted_by: { type: "string", format: "uuid", nullable: true },
+          business_name: { type: "string" },
+          description: { type: "string", nullable: true },
+          tenant_type: { type: "string", nullable: true },
+          latitude: { type: "number" },
+          longitude: { type: "number" },
+          tenant_area_m2: { type: "number", nullable: true },
+          target_market: { type: "string", nullable: true },
+          rent_price_amount: { type: "number", nullable: true },
+          rent_period_unit: { type: "string", nullable: true },
+          rent_expiry_date: { type: "string", format: "date", nullable: true },
+          revenue_per_month_idr: { type: "number", nullable: true },
+          txn_high_idr: { type: "number", nullable: true },
+          txn_normal_idr: { type: "number", nullable: true },
+          txn_low_idr: { type: "number", nullable: true },
+          transaction_per_buyer_idr: { type: "number", nullable: true },
+          rent_trend_pct: { type: "number", nullable: true },
+          status: { type: "string", enum: ["pending", "reviewed", "exported"] },
+          created_at: { type: "string", format: "date-time" },
+          updated_at: { type: "string", format: "date-time" },
+        },
+      },
+      CreateReallocationRequestBody: {
+        type: "object",
+        required: ["origin_grid_id", "requested_grid_id"],
+        properties: {
+          origin_grid_id: { type: "string" },
+          requested_grid_id: { type: "string" },
+          requested_district: { type: "string" },
+          distance_m: { type: "number" },
+          matching_score: { type: "number" },
+          note: { type: "string" },
+        },
+      },
+      ReallocationRequest: {
+        type: "object",
+        properties: {
+          id: { type: "string", format: "uuid" },
+          submitted_by: { type: "string", format: "uuid", nullable: true },
+          origin_grid_id: { type: "string" },
+          requested_grid_id: { type: "string" },
+          requested_district: { type: "string", nullable: true },
+          distance_m: { type: "number", nullable: true },
+          matching_score: { type: "number", nullable: true },
+          note: { type: "string", nullable: true },
+          status: { type: "string", enum: ["pending", "approved", "rejected"] },
+          reviewed_by: { type: "string", format: "uuid", nullable: true },
+          reviewed_at: { type: "string", format: "date-time", nullable: true },
+          created_at: { type: "string", format: "date-time" },
+          updated_at: { type: "string", format: "date-time" },
         },
       },
     },

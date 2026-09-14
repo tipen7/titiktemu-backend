@@ -1,15 +1,24 @@
 import {
+  type CreateReallocationRequestInput,
+  type CreateUmkmSelfReportInput,
+  insertReallocationRequest,
+  insertUmkmSelfReport,
+  type ReallocationRequestListFilters,
   readDashboardSummary,
   readLatestEwsModelAccuracy,
   readPolicyRecommendations,
   readReallocationCandidates,
+  readReallocationRequests,
   readRepositoryStatus,
   readUmkmById,
   readUmkmList,
+  readUmkmSelfReports,
   readUserProfile,
   readZoneAtLocation,
   readZonesGeoJson,
   type UmkmListFilters,
+  type UmkmSelfReportListFilters,
+  updateReallocationRequestStatus,
 } from "../repositories/index.js";
 import type {
   GeoJsonFeature,
@@ -178,4 +187,37 @@ export async function getPolicyRecommendations(recommendationType?: string) {
 
 export async function getUserProfile(id: string): Promise<AuthUser | null> {
   return readUserProfile(id);
+}
+
+// --- UMKM self-report submissions ---
+
+export async function submitUmkmSelfReport(input: CreateUmkmSelfReportInput) {
+  return insertUmkmSelfReport(input);
+}
+
+export async function getUmkmSelfReports(filters: UmkmSelfReportListFilters) {
+  return readUmkmSelfReports(filters);
+}
+
+// --- Reallocation requests ("Pengajuan Realokasi") -- distinct from Laporan
+// Alokasi (policy_recommendations) above; see repository module docstring. ---
+
+export async function submitReallocationRequest(
+  input: CreateReallocationRequestInput,
+) {
+  return insertReallocationRequest(input);
+}
+
+export async function getReallocationRequests(
+  filters: ReallocationRequestListFilters,
+) {
+  return readReallocationRequests(filters);
+}
+
+export async function decideReallocationRequest(
+  id: string,
+  status: "approved" | "rejected",
+  reviewedBy: string | null,
+) {
+  return updateReallocationRequestStatus(id, status, reviewedBy);
 }
