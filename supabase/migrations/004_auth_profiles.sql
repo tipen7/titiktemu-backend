@@ -15,12 +15,30 @@
 -- DATABASE_URL at the real Supabase project, per .env.example -- this is
 -- only here so the schema/trigger themselves can be created and manually
 -- tested locally with a plain INSERT.
-CREATE SCHEMA IF NOT EXISTS auth;
-CREATE TABLE IF NOT EXISTS auth.users (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  email text,
-  raw_user_meta_data jsonb NOT NULL DEFAULT '{}'::jsonb
-);
+-- Plain `CREATE TABLE IF NOT EXISTS auth.users` still requires CREATE
+-- privilege on the `auth` schema to attempt the statement at all, even
+-- when the table already exists -- it is NOT the no-op against a real
+-- Supabase project this comment originally assumed (verified: fails with
+-- "permission denied for schema auth" there, since Supabase locks that
+-- schema down from the `postgres` role). Gate it on an explicit catalog
+-- existence check first (a plain SELECT needs no privilege) so the
+-- CREATE statements are only reached on local dev, where auth.users
+-- genuinely doesn't exist yet.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'auth' AND c.relname = 'users'
+  ) THEN
+    CREATE SCHEMA IF NOT EXISTS auth;
+    CREATE TABLE auth.users (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      email text,
+      raw_user_meta_data jsonb NOT NULL DEFAULT '{}'::jsonb
+    );
+  END IF;
+END $$;
 
 -- Supabase Auth manages passwords in auth.users -- this table never sees one.
 ALTER TABLE users DROP COLUMN password_hash;
