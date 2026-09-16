@@ -43,12 +43,21 @@ export interface ZoneAtLocation {
 // it from `accuracy_pct` here. That was the old bug: a high accuracy
 // number was mechanically labeled "high confidence" regardless of how
 // many real points backed it, compounding an already-inflated figure.
+// accuracy_pct is ORDINAL/adjacent-tier-tolerant: aman/waspada/bahaya is an
+// ordered risk scale, so a one-tier miss (e.g. real waspada predicted as
+// bahaya) counts as correct while a two-tier aman<->bahaya miss does not.
+// exact_match_accuracy_pct is the stricter, untolerant figure -- both are
+// real, LOOCV-validated numbers against the same real survey data, just
+// scored differently; nullable because rows written before this
+// distinction existed don't have it.
 export interface ModelAccuracy {
   accuracy_pct: number;
   n: number;
   ci_95_low_pct: number;
   ci_95_high_pct: number;
   confidence_level: "high" | "moderate" | "low";
+  exact_match_accuracy_pct: number | null;
+  opposite_extreme_error_pct: number | null;
   computed_at: string;
 }
 

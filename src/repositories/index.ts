@@ -83,6 +83,8 @@ export async function readLatestEwsModelAccuracy(): Promise<{
   ci_95_low_pct: number;
   ci_95_high_pct: number;
   confidence_level: "high" | "moderate" | "low";
+  exact_match_accuracy_pct: number | null;
+  opposite_extreme_error_pct: number | null;
   computed_at: string;
 } | null> {
   // dashboard_summary is append-only (one row per batch run) and is
@@ -91,12 +93,23 @@ export async function readLatestEwsModelAccuracy(): Promise<{
   // field existed, or from before the survey-validated metric replaced
   // the surface-fit-only figure) are filtered out with `metrics ? 'key'`
   // rather than read as a false 0% accuracy.
+  //
+  // accuracy_pct is ORDINAL/adjacent-tier-tolerant (aman/waspada/bahaya is
+  // an ordered risk scale -- a one-tier miss, e.g. waspada predicted as
+  // bahaya, counts as correct; a two-tier aman<->bahaya miss does not).
+  // exact_match_accuracy_pct is the older, stricter figure, kept for
+  // anyone auditing the model itself. Rows from before this distinction
+  // existed won't have exact_match_accuracy_pct/opposite_extreme_error_pct
+  // in their JSON -- ->> against a missing key is NULL, not an error, so
+  // those two just come back null on old rows rather than breaking the query.
   const { rows } = await getPool().query<{
     accuracy_pct: number;
     n: number;
     ci_95_low_pct: number;
     ci_95_high_pct: number;
     confidence_level: "high" | "moderate" | "low";
+    exact_match_accuracy_pct: number | null;
+    opposite_extreme_error_pct: number | null;
     computed_at: string;
   }>(
     `SELECT
@@ -105,6 +118,8 @@ export async function readLatestEwsModelAccuracy(): Promise<{
        (metrics->>'ews_validation_ci_95_low_pct')::float8 AS ci_95_low_pct,
        (metrics->>'ews_validation_ci_95_high_pct')::float8 AS ci_95_high_pct,
        metrics->>'confidence_level' AS confidence_level,
+       (metrics->>'ews_validation_exact_match_accuracy_pct')::float8 AS exact_match_accuracy_pct,
+       (metrics->>'ews_validation_opposite_extreme_error_pct')::float8 AS opposite_extreme_error_pct,
        computed_at
      FROM dashboard_summary
      WHERE metrics ? 'ews_validation_accuracy_pct'
@@ -360,6 +375,7 @@ export interface UmkmSelfReport {
   submitted_by: string | null;
   business_name: string;
   description: string | null;
+  category: string | null;
   tenant_type: string | null;
   latitude: number;
   longitude: number;
@@ -385,6 +401,7 @@ export interface CreateUmkmSelfReportInput {
   latitude: number;
   longitude: number;
   description?: string;
+  category?: string;
   tenantType?: string;
   tenantAreaM2?: number;
   targetMarket?: string;
@@ -400,7 +417,7 @@ export interface CreateUmkmSelfReportInput {
 }
 
 const UMKM_SELF_REPORT_RETURNING = `
-  id, submitted_by, business_name, description, tenant_type,
+  id, submitted_by, business_name, description, category, tenant_type,
   latitude::float8 AS latitude, longitude::float8 AS longitude,
   tenant_area_m2::float8 AS tenant_area_m2, target_market,
   rent_price_amount::float8 AS rent_price_amount, rent_period_unit, rent_expiry_date,
@@ -415,16 +432,17 @@ export async function insertUmkmSelfReport(
 ): Promise<UmkmSelfReport> {
   const { rows } = await getPool().query<UmkmSelfReport>(
     `INSERT INTO umkm_self_reports (
-       submitted_by, business_name, description, tenant_type, latitude, longitude,
+       submitted_by, business_name, description, category, tenant_type, latitude, longitude,
        tenant_area_m2, target_market, rent_price_amount, rent_period_unit, rent_expiry_date,
        revenue_per_month_idr, txn_high_idr, txn_normal_idr, txn_low_idr,
        transaction_per_buyer_idr, rent_trend_pct
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      RETURNING ${UMKM_SELF_REPORT_RETURNING}`,
     [
       input.submittedBy,
       input.businessName,
       input.description ?? null,
+      input.category ?? null,
       input.tenantType ?? null,
       input.latitude,
       input.longitude,

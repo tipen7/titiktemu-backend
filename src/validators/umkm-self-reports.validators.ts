@@ -10,6 +10,19 @@ export const createUmkmSelfReportSchema = z.object({
   latitude: z.coerce.number().min(-90).max(90),
   longitude: z.coerce.number().min(-180).max(180),
   description: z.string().max(2000).optional(),
+  // What the business sells -- distinct from tenant_type below (tenancy
+  // arrangement, not product category). Real signal titiktemu-analytics
+  // doesn't have from the static survey files at all today.
+  category: z
+    .enum([
+      "makanan-ringan",
+      "kuliner",
+      "kerajinan",
+      "jasa",
+      "dagang-retail",
+      "lainnya",
+    ])
+    .optional(),
   tenant_type: z
     .enum([
       "umkm_tetap",

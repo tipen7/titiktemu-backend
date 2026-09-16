@@ -38,13 +38,21 @@ describe("GET /api/zones/lookup", () => {
     // (v3 + v5 only; v4 retired -- its revenue field was a disclosed
     // mechanical proxy, not an independent measurement) with CV-selected
     // GWR bandwidth (see that repo's
-    // src/modeling/xgboost_ews.validate_ews_against_survey). NOT the old
-    // XGBoost/GWR surface-fit figure (~60-100%, near-100% by construction
-    // and intentionally not exposed by this API) -- that number measured
-    // curve-fitting fidelity, not real-world accuracy. This number moves
-    // as analytics' survey data grows -- re-verify against a live query
-    // before updating it again, don't just bump it to whatever a new run prints.
-    expect(response.body.model_accuracy.accuracy_pct).toBeCloseTo(64.7, 1);
+    // src/modeling/xgboost_ews.validate_ews_against_survey). accuracy_pct
+    // is ORDINAL/adjacent-tier-tolerant (a one-tier miss, e.g. waspada
+    // predicted as bahaya, counts as correct -- aman/waspada/bahaya is an
+    // ordered risk scale); exact_match_accuracy_pct is the stricter,
+    // untolerant figure. NOT the old XGBoost/GWR surface-fit figure
+    // (~60-100%, near-100% by construction and intentionally not exposed
+    // by this API) -- that number measured curve-fitting fidelity, not
+    // real-world accuracy. These numbers move as analytics' survey data
+    // grows -- re-verify against a live query before updating them again,
+    // don't just bump them to whatever a new run prints.
+    expect(response.body.model_accuracy.accuracy_pct).toBeCloseTo(90.8, 1);
+    expect(response.body.model_accuracy.exact_match_accuracy_pct).toBeCloseTo(
+      64.7,
+      1,
+    );
     expect(response.body.model_accuracy.n).toBe(119);
     expect(response.body.model_accuracy.confidence_level).toBe("high");
   });
@@ -109,10 +117,11 @@ describe("GET /api/model-accuracy", () => {
   it("returns the latest EWS model accuracy with the correct confidence level", async () => {
     const response = await supertest(app).get("/api/model-accuracy");
     expect(response.status).toBe(200);
-    expect(response.body.accuracy_pct).toBeCloseTo(64.7, 1);
+    expect(response.body.accuracy_pct).toBeCloseTo(90.8, 1);
+    expect(response.body.exact_match_accuracy_pct).toBeCloseTo(64.7, 1);
     expect(response.body.n).toBe(119);
-    expect(response.body.ci_95_low_pct).toBeCloseTo(55.8, 1);
-    expect(response.body.ci_95_high_pct).toBeCloseTo(72.7, 1);
+    expect(response.body.ci_95_low_pct).toBeCloseTo(84.2, 1);
+    expect(response.body.ci_95_high_pct).toBeCloseTo(94.8, 1);
     expect(response.body.confidence_level).toBe("high");
     expect(typeof response.body.computed_at).toBe("string");
   });

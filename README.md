@@ -249,44 +249,22 @@ npx tsc --noEmit
 
 ## Database and Supabase
 
-`supabase/migrations/001_init.sql` contains the original skeletal schema: the `postgis` extension, `user_role`/`report_status` enums, and `users`, `grid`, `umkm_report` tables. None of these are populated or read by anything in this repo today — kept for a possible future in-house pipeline or the UMKM self-report write path.
+There are seven files under `supabase/migrations/`, applied in order:
 
-**`supabase/migrations/002_analytics_mock_schema.sql` and `003_analytics_mock_seed.sql` are a mock stand-in for titiktemu-analytics' real schema.** The read-model endpoints (`/api/zones`, `/api/zones/lookup`, `/api/reallocation`, `/api/model-accuracy`, `/api/umkm*`, `/api/dashboard-summary`, `/api/policy-recommendations`, `/api/chat`) all read tables (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `spatial_grids_geojson`, `umkm_businesses`, `dashboard_summary`) that are supposed to be owned and populated by **titiktemu-analytics**, a separate Python batch pipeline not present in this workspace. Since that pipeline has never been run against local/dev databases, those tables didn't exist and every endpoint reading them 500'd. `002`/`003` reconstruct that schema (inferred purely from the SQL in `src/repositories/index.ts` — not sourced from titiktemu-analytics itself) and seed it with fabricated mock data (12 grid cells, a few UMKM businesses, one dashboard summary run) so local development has something to serve.
-
-- **This is mock data, not real survey/model output.** Replace `002`/`003` with titiktemu-analytics' actual migration + a real batch run once that pipeline is wired up to this database — don't treat the seeded numbers (e.g. the 35.1% model accuracy) as real.
-- Re-seeding is safe: every insert in `003` is `ON CONFLICT DO NOTHING` (or guarded for tables without a natural unique key), so re-running it against a database that already has this data is a no-op.
-- **Local development**: `docker compose up -d` applies every file under `supabase/migrations/` automatically, in order, against a fresh volume (see "Start the local stack" above) — no separate seeding step needed for a new setup. To apply against an *existing* running container (e.g. after pulling new migration files), run them manually:
-  ```bash
-  docker exec -i <db-container-name> psql -U postgres -d titiktemu < supabase/migrations/002_analytics_mock_schema.sql
-  docker exec -i <db-container-name> psql -U postgres -d titiktemu < supabase/migrations/003_analytics_mock_seed.sql
-  ```
-- **Against a real Supabase project**: create the project in the Supabase dashboard, enable the PostGIS extension under `Database > Extensions`, then run each migration against it in order — they're portable between environments:
-  ```bash
-  psql "$DATABASE_URL" -f supabase/migrations/001_init.sql
-  psql "$DATABASE_URL" -f supabase/migrations/002_analytics_mock_schema.sql
-  psql "$DATABASE_URL" -f supabase/migrations/003_analytics_mock_seed.sql
-  ```
-- **`supabase/migrations/004_auth_profiles.sql` wires `users` to Supabase Auth** (the team committed to it as the RBAC identity provider): `users.id` now references `auth.users(id)`, `password_hash` is gone (Supabase Auth owns credentials), and a `handle_new_user` trigger creates the matching `public.users` row -- with the role from `supabase.auth.signUp`'s `options.data.role` -- the moment someone signs up. Local docker-compose Postgres has no real `auth` schema, so this migration also creates a minimal shim `auth.users` (guarded with `IF NOT EXISTS`, a no-op against a real Supabase project) purely so the schema/trigger/FK can exist locally; nothing writes to that shim automatically (no local GoTrue), so exercising real signup/login end-to-end requires pointing `DATABASE_URL`/`SUPABASE_URL` at the real Supabase project.
-- `src/middleware/index.ts` exports `requireAuth` (verifies the `Authorization: Bearer <Supabase access token>` header via `src/lib/supabase.ts`'s service-role client, then loads the `public.users` profile) and `requireRole(...roles)` -- apply both to any endpoint that should require login/a specific role. Only `GET /api/auth/me` uses them today; none of the existing read-model endpoints are gated yet.
-There are two migrations, applied in order:
-There are three files under `supabase/migrations/`, applied in order:
-
-- **`001_init.sql`** — the original Fase 0 schema: the `postgis` extension, `user_role`/`report_status` enums, and skeletal `users`, `grid`, and `umkm_report` tables. This is the partner's auth/reporting foundation — don't repurpose or drop the `users` table here without checking with them first.
-- **`002_analytics_schema.sql`** — the real tables the app actually queries today (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `umkm_businesses`, `dashboard_summary`, plus the `spatial_grids_geojson` view), matching exactly what titiktemu-analytics' batch pipeline writes. These are a separate concern from `001`'s tables — no foreign keys between the two migrations' tables.
+- **`001_init.sql`** — the original Fase 0 schema: the `postgis` extension, `user_role`/`report_status` enums, and skeletal `users`, `grid`, and `umkm_report` tables. `grid`/`umkm_report` are dead (nothing reads or writes them) — kept for a possible future in-house pipeline.
+- **`002_analytics_schema.sql`** — the real tables the app actually queries today (`spatial_grids`, `gentrification_risk_scores`, `policy_recommendations`, `reallocation_candidates`, `umkm_businesses`, `dashboard_summary`, plus the `spatial_grids_geojson` view), matching exactly what titiktemu-analytics' batch pipeline writes. A separate concern from `001`'s tables — no foreign keys between the two.
 - **`003_seed_real_data.sql`** — real data, not schema: a full snapshot of a genuine titiktemu-analytics pipeline run (v3+v5 real UMKM survey data, 64.7% real/LOOCV-validated model accuracy, n=119) for every table `002` creates. This is what makes a freshly-provisioned database (yours, a teammate's, or a new Supabase project) immediately usable for frontend/backend development and demos without waiting ~30-60 minutes for a real pipeline run. **One-time seed for a fresh, empty database** — re-running it against an already-seeded one fails on duplicate primary keys (expected; a real pipeline run, not this file, is how the data refreshes going forward).
-- **`004_auth_profiles.sql`** — wires `users` to Supabase Auth (see below).
-- **`005_umkm_self_reports.sql`** / **`006_reallocation_requests.sql`** — two net-new, standalone write-path tables backing `/api/umkm-self-reports` and `/api/reallocation-requests` (see "Current API" above). Neither reuses or touches `001`'s dead `umkm_report` table or `002`'s analytics tables (beyond `006`'s `spatial_grids(grid_id)` FK, following the same convention `002` itself uses). Both are idempotent (`CREATE TABLE IF NOT EXISTS`) and safe to re-run.
+- **`004_auth_profiles.sql`** — wires `users` to Supabase Auth (the team committed to it as the RBAC identity provider): `users.id` now references `auth.users(id)`, `password_hash` is gone (Supabase Auth owns credentials), and a `handle_new_user` trigger creates the matching `public.users` row — with the role from `supabase.auth.signUp`'s `options.data.role` — the moment someone signs up. Local docker-compose Postgres has no real `auth` schema, so this migration also creates a minimal shim `auth.users` (guarded with an explicit catalog existence check, a no-op against a real Supabase project) purely so the schema/trigger/FK can exist locally; nothing writes to that shim automatically (no local GoTrue), so exercising real signup/login end-to-end requires pointing `DATABASE_URL`/`SUPABASE_URL` at the real Supabase project. `src/middleware/index.ts` exports `requireAuth`/`requireRole(...roles)` built on top of this.
+- **`005_umkm_self_reports.sql`** / **`006_reallocation_requests.sql`** — two net-new, standalone write-path tables backing `/api/umkm-self-reports` and `/api/reallocation-requests` (see "Current API" above). Neither reuses or touches `001`'s dead `umkm_report` table or `002`'s analytics tables (beyond `006`'s `spatial_grids(grid_id)` FK, following the same convention `002` itself uses).
+- **`007_umkm_self_report_category.sql`** — adds `category` (business type: kuliner/jasa/retail/etc., a real modeling-relevant field distinct from `tenant_type`'s tetap/musiman/franchise distinction) to `umkm_self_reports`.
 
-`001` and `002` are idempotent (`CREATE TABLE IF NOT EXISTS` / `CREATE OR REPLACE VIEW`) and safe to re-run; `003` is not (see above).
+`001`, `002`, `004`, `005`, `006`, `007` are idempotent (`CREATE TABLE/COLUMN IF NOT EXISTS`, or an explicit existence check where `IF NOT EXISTS` isn't available) and safe to re-run; `003` is not (see above).
 
-- **Local development**: `docker compose up -d` applies all three automatically, in filename order, against a fresh volume (see "Start the local database" above).
-- **Against a real Supabase project**: create the project in the Supabase dashboard, enable the PostGIS extension under `Database > Extensions`, then run all three files against it in order — they're portable between environments:
+- **Local development**: `docker compose up -d` applies every file automatically, in filename order, against a fresh volume (see "Start the local database" above).
+- **Against a real Supabase project**: create the project in the Supabase dashboard, enable the PostGIS extension under `Database > Extensions`, then run each file against it in order — they're portable between environments:
   ```bash
-  psql "$DATABASE_URL" -f supabase/migrations/001_init.sql
-  psql "$DATABASE_URL" -f supabase/migrations/002_analytics_schema.sql
-  psql "$DATABASE_URL" -f supabase/migrations/003_seed_real_data.sql
+  for f in supabase/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
   ```
-- The `users` table is self-contained (its own UUID primary key, no foreign key to Supabase's `auth.users`) so the same migration works identically against local Docker Postgres and a real Supabase project. Revisit this if the team commits to Supabase Auth as the RBAC identity provider.
 - `002`'s tables are also created ad hoc by titiktemu-analytics' `ensure_schema()` (a local-dev convenience for that repo, not the source of truth) -- this migration is the actual source of truth for their shape; keep the two in sync if you change one.
 - Keep persistence logic in `src/repositories/` and database client setup in `src/db/`.
 - Document any new required variables and migration commands here as they're added.

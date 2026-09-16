@@ -248,6 +248,7 @@ export const createUmkmSelfReportController: RequestHandler = async (
       latitude: body.latitude,
       longitude: body.longitude,
       ...(body.description !== undefined && { description: body.description }),
+      ...(body.category !== undefined && { category: body.category }),
       ...(body.tenant_type !== undefined && { tenantType: body.tenant_type }),
       ...(body.tenant_area_m2 !== undefined && {
         tenantAreaM2: body.tenant_area_m2,

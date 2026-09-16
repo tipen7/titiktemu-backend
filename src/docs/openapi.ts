@@ -468,7 +468,11 @@ export const openApiDocument = {
           "UMKM survey vulnerability -- NOT the XGBoost/GWR surface-fit " +
           "figure (which is near-100% by construction and not exposed via " +
           "this API). confidence_level reflects the real validation sample " +
-          "size (n), not the accuracy percentage itself.",
+          "size (n), not the accuracy percentage itself. accuracy_pct is " +
+          "ORDINAL/adjacent-tier-tolerant (aman/waspada/bahaya is an ordered " +
+          "risk scale -- a one-tier miss counts as correct, a two-tier " +
+          "aman<->bahaya miss does not); exact_match_accuracy_pct is the " +
+          "stricter, untolerant figure.",
         properties: {
           accuracy_pct: { type: "number" },
           n: {
@@ -481,6 +485,8 @@ export const openApiDocument = {
             type: "string",
             enum: ["high", "moderate", "low"],
           },
+          exact_match_accuracy_pct: { type: "number", nullable: true },
+          opposite_extreme_error_pct: { type: "number", nullable: true },
           computed_at: { type: "string", format: "date-time" },
         },
       },
@@ -520,6 +526,17 @@ export const openApiDocument = {
           latitude: { type: "number" },
           longitude: { type: "number" },
           description: { type: "string" },
+          category: {
+            type: "string",
+            enum: [
+              "makanan-ringan",
+              "kuliner",
+              "kerajinan",
+              "jasa",
+              "dagang-retail",
+              "lainnya",
+            ],
+          },
           tenant_type: {
             type: "string",
             enum: [
@@ -552,6 +569,7 @@ export const openApiDocument = {
           submitted_by: { type: "string", format: "uuid", nullable: true },
           business_name: { type: "string" },
           description: { type: "string", nullable: true },
+          category: { type: "string", nullable: true },
           tenant_type: { type: "string", nullable: true },
           latitude: { type: "number" },
           longitude: { type: "number" },

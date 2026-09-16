@@ -80,6 +80,8 @@ export async function getModelAccuracy(): Promise<ModelAccuracy | null> {
       ci_95_low_pct: row.ci_95_low_pct,
       ci_95_high_pct: row.ci_95_high_pct,
       confidence_level: row.confidence_level,
+      exact_match_accuracy_pct: row.exact_match_accuracy_pct,
+      opposite_extreme_error_pct: row.opposite_extreme_error_pct,
       computed_at: row.computed_at,
     };
   } catch {
