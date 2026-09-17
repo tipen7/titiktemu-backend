@@ -2,7 +2,7 @@
 -- to real Supabase Auth, per that migration's own note: "Revisit FK to
 -- auth.users(id) once Supabase Auth strategy is confirmed." It's confirmed:
 -- Supabase Auth owns credentials, this table only holds the app-level
--- profile (role, name) for each auth.users row.
+-- profile (role, name) for each auth.users row. 
 
 -- Same "mock reconstruction" situation as 002_analytics_mock_schema.sql:
 -- the local docker-compose Postgres is plain postgis/postgis, with no
